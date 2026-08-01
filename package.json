@@ -1,0 +1,16 @@
+{
+  "name": "fluxa",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Procedural organic design system — Raw WebGL2 fluid core",
+  "scripts": {
+    "dev": "pnpm --filter playground dev",
+    "storybook": "pnpm --filter storybook dev",
+    "build": "pnpm -r --filter @fluxa/* build && pnpm --filter playground build",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@10.14.0"
+}
