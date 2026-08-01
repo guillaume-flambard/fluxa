@@ -67,6 +67,8 @@ export interface FluxaEngine {
   recordHumanActivity: (velocity?: number) => void;
   recordLanguageInput: (charCount?: number) => void;
   forceSilence: () => void;
+  setInkPainting: (painting: boolean) => void;
+  pushInk: (x: number, y: number) => void;
   reportCodeHealth: (opts: { hasErrors: boolean }) => void;
   forceIdleForTesting: () => void;
   dispose: () => void;
@@ -156,6 +158,10 @@ export class HeightmapSimulator {
   private pointerUv = { x: 0.5, y: 0.5 };
   private simTime = 0;
   private channelNudgeAcc = 0;
+  private inkPainting = false;
+  private inkPts: { x: number; y: number }[] = [];
+  private inkStrength = 0;
+  private lastInkUv = { x: -1, y: -1 };
 
   constructor(canvas: HTMLCanvasElement, options: FluxaEngineOptions = {}) {
     this.ctx = createGL(canvas);
@@ -216,6 +222,16 @@ export class HeightmapSimulator {
       "u_animaUv",
       "u_animaRadius",
       "u_presence",
+      "u_inkStrength",
+      "u_inkCount",
+      "u_ink0",
+      "u_ink1",
+      "u_ink2",
+      "u_ink3",
+      "u_ink4",
+      "u_ink5",
+      "u_ink6",
+      "u_ink7",
     ]);
   }
 
@@ -312,6 +328,28 @@ export class HeightmapSimulator {
 
   forceSilence(): void {
     this.channels.forceSilence();
+    this.wake();
+  }
+
+  setInkPainting(painting: boolean): void {
+    this.inkPainting = painting;
+    if (!painting) {
+      this.lastInkUv = { x: -1, y: -1 };
+    }
+  }
+
+  /** Append a visual-ink sample (gesture paint). */
+  pushInk(x: number, y: number): void {
+    const dx = x - this.lastInkUv.x;
+    const dy = y - this.lastInkUv.y;
+    if (this.lastInkUv.x >= 0 && Math.hypot(dx, dy) < 0.012) return;
+    this.lastInkUv = { x, y };
+    this.inkPts.unshift({ x, y });
+    if (this.inkPts.length > 8) this.inkPts.length = 8;
+    this.inkStrength = Math.min(1, this.inkStrength + 0.22);
+    this.channels.recordVisual(0.35);
+    this.channels.recordProximics(0.12);
+    this.lifecycle.recordHumanActivity(0.2);
     this.wake();
   }
 
@@ -454,6 +492,17 @@ export class HeightmapSimulator {
     if (this.channelNudgeAcc >= 0.45) {
       this.channelNudgeAcc = 0;
       this.nudgeFromChannels();
+    }
+
+    // Ink trail fades when not painting
+    if (!this.inkPainting) {
+      this.inkStrength *= Math.exp(-1.1 * dt);
+      if (this.inkStrength < 0.02 && this.inkPts.length > 0) {
+        this.inkPts = [];
+        this.inkStrength = 0;
+      }
+    } else {
+      this.inkStrength = Math.min(1, this.inkStrength + dt * 0.15);
     }
 
     const fatigued = this.meta.fatigued;
@@ -600,6 +649,24 @@ export class HeightmapSimulator {
       pass.uniforms["u_presence"] ?? null,
       this.channelSnap.presenceGain,
     );
+    gl.uniform1f(pass.uniforms["u_inkStrength"] ?? null, this.inkStrength);
+    const nInk = this.inkPts.length;
+    gl.uniform1i(pass.uniforms["u_inkCount"] ?? null, nInk);
+    const inkUniforms = [
+      "u_ink0",
+      "u_ink1",
+      "u_ink2",
+      "u_ink3",
+      "u_ink4",
+      "u_ink5",
+      "u_ink6",
+      "u_ink7",
+    ];
+    for (let i = 0; i < 8; i++) {
+      const p = this.inkPts[i];
+      const name = inkUniforms[i]!;
+      gl.uniform2f(pass.uniforms[name] ?? null, p?.x ?? 0, p?.y ?? 0);
+    }
 
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
@@ -669,6 +736,8 @@ export function createEngine(
     recordHumanActivity: (v) => sim.recordHumanActivity(v),
     recordLanguageInput: (n) => sim.recordLanguageInput(n),
     forceSilence: () => sim.forceSilence(),
+    setInkPainting: (p) => sim.setInkPainting(p),
+    pushInk: (x, y) => sim.pushInk(x, y),
     reportCodeHealth: (o) => sim.reportCodeHealth(o),
     forceIdleForTesting: () => sim.forceIdleForTesting(),
     dispose: () => sim.dispose(),

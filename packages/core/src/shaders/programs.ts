@@ -111,6 +111,16 @@ uniform float u_time;
 uniform vec2 u_animaUv;
 uniform float u_animaRadius;
 uniform float u_presence;
+uniform float u_inkStrength;
+uniform int u_inkCount;
+uniform vec2 u_ink0;
+uniform vec2 u_ink1;
+uniform vec2 u_ink2;
+uniform vec2 u_ink3;
+uniform vec2 u_ink4;
+uniform vec2 u_ink5;
+uniform vec2 u_ink6;
+uniform vec2 u_ink7;
 
 // Distance to quadratic Bezier (approximate via subdivision samples)
 float distToFilament(vec2 p, vec2 a, vec2 b, vec2 c) {
@@ -198,6 +208,31 @@ void main() {
   float tension = clamp(length(u_pointerUv - u_animaUv) * 1.2, 0.0, 1.0);
   vec3 filCol = mix(animaCol, vec3(0.9, 0.95, 1.0), 0.35);
   chorion += filCol * filament * (0.45 + 0.4 * tension) * (0.5 + 0.5 * u_attraction) * presence;
+
+  // --- Visual ink trail (gesture paint) ---
+  if (u_inkStrength > 0.01 && u_inkCount > 0) {
+    vec2 inks[8];
+    inks[0] = u_ink0; inks[1] = u_ink1; inks[2] = u_ink2; inks[3] = u_ink3;
+    inks[4] = u_ink4; inks[5] = u_ink5; inks[6] = u_ink6; inks[7] = u_ink7;
+    vec3 inkCol = mix(animaCol, vec3(0.7, 0.95, 0.9), 0.4);
+    float inkGlow = 0.0;
+    for (int i = 0; i < 8; i++) {
+      if (i >= u_inkCount) break;
+      float age = 1.0 - float(i) / max(float(u_inkCount), 1.0);
+      float d = length(v_uv - inks[i]);
+      inkGlow += exp(-d * d / 0.0009) * age;
+      if (i > 0) {
+        vec2 a = inks[i - 1];
+        vec2 b = inks[i];
+        vec2 ab = b - a;
+        float ab2 = max(dot(ab, ab), 1e-8);
+        float t = clamp(dot(v_uv - a, ab) / ab2, 0.0, 1.0);
+        float seg = length(v_uv - (a + ab * t));
+        inkGlow += exp(-seg * seg / 0.00025) * age * 0.85;
+      }
+    }
+    chorion += inkCol * inkGlow * u_inkStrength * (0.55 + 0.45 * presence);
+  }
 
   fragColor = vec4(chorion, 1.0);
 }

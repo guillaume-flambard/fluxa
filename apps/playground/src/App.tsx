@@ -142,11 +142,11 @@ export function App() {
           Fluxa / Living link
         </p>
         <h1 style={{ margin: "8px 0 0", fontWeight: 500, fontSize: 28 }}>
-          Language couples. Silence dims.
+          Drag paints light. Type couples.
         </h1>
         <p style={{ margin: "10px 0 0", opacity: 0.7, lineHeight: 1.45 }}>
-          Move for Filament. Type for language channel. Presence is coupled only
-          while the link signals.
+          Hold and drag for visual ink along the gesture. Move for Filament.
+          Type for language. Silence dims presence.
         </p>
       </div>
 

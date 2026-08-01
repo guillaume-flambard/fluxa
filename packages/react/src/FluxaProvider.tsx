@@ -260,6 +260,8 @@ export function FluxaProvider({
     const onPointerDown = (e: PointerEvent) => {
       const uv = eng.clientToUv(e.clientX, e.clientY);
       eng.setPointerUv(uv.x, uv.y);
+      eng.setInkPainting(true);
+      eng.pushInk(uv.x, uv.y);
       eng.ripples.pointerDown(uv.x, uv.y);
       eng.homeostasis.excite();
       eng.recordClick();
@@ -270,12 +272,21 @@ export function FluxaProvider({
     const onPointerMove = (e: PointerEvent) => {
       const uv = eng.clientToUv(e.clientX, e.clientY);
       eng.setPointerUv(uv.x, uv.y);
+      if (e.buttons > 0) {
+        eng.pushInk(uv.x, uv.y);
+      }
       eng.ripples.pointerMove(uv.x, uv.y);
       eng.recordHumanActivity(0.15);
       eng.wake();
     };
 
     const onPointerLeave = () => {
+      eng.setInkPainting(false);
+      eng.ripples.pointerLeave();
+    };
+
+    const onPointerUp = () => {
+      eng.setInkPainting(false);
       eng.ripples.pointerLeave();
     };
 
@@ -293,7 +304,7 @@ export function FluxaProvider({
     canvas.addEventListener("pointerdown", onPointerDown);
     canvas.addEventListener("pointermove", onPointerMove);
     canvas.addEventListener("pointerleave", onPointerLeave);
-    canvas.addEventListener("pointerup", onPointerLeave);
+    canvas.addEventListener("pointerup", onPointerUp);
     window.addEventListener("keydown", onKeyDown);
 
     const ro = new ResizeObserver(syncSize);
@@ -303,7 +314,7 @@ export function FluxaProvider({
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerleave", onPointerLeave);
-      canvas.removeEventListener("pointerup", onPointerLeave);
+      canvas.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("keydown", onKeyDown);
       ro.disconnect();
       eng.dispose();

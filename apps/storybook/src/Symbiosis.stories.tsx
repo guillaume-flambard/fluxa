@@ -120,8 +120,8 @@ function LivingPanel() {
         </button>
       </div>
       <p style={{ marginTop: 10, opacity: 0.5, lineHeight: 1.35, marginBottom: 0 }}>
-        Equality peaks in language. Presence is coupled only while the link
-        signals; silence dims Anima (no inhabited gap).
+        Drag to paint visual ink (gesture light). Type for language. Presence
+        couples only while the link signals.
       </p>
     </div>
   );

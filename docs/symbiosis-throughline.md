@@ -25,7 +25,9 @@ Equality peaks in **language** (text, voice, code). Embodiment peaks on the huma
 
 In code: `ChannelActivityTracker` + `u_presence`. Language / proximics / visual raise intensities; after a silence threshold, `presence` becomes `absent` and Anima/Filament dim. No inhabited silence between turns.
 
-Fluxa today: language + visceral paralanguage (`expressVisceral`); Filament as on-screen proximics.
+**Visual ink:** hold-drag paints a fading light trail (`pushInk` / `u_ink*`) on the visual channel, alongside water cavities.
+
+Fluxa today: language + visceral paralanguage (`expressVisceral`); Filament as on-screen proximics; ink as gesture vision.
 
 ## Map onto Fluxa
 
