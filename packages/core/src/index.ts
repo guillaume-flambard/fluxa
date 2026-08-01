@@ -48,9 +48,25 @@ export {
   type VisceralIntent,
 } from "./anima/types.js";
 export {
+  AnimaLocusStore,
+  type AnimaLocusSnapshot,
+} from "./anima/AnimaLocusStore.js";
+export {
   ChannelActivityTracker,
   type CommChannel,
   type PresenceState,
   type ChannelSnapshot,
   type ChannelActivityOptions,
 } from "./channels/index.js";
+export {
+  ConversationMemory,
+  LocalDialogueEngine,
+  DIALOGUE_STORAGE_KEY,
+  tokenize,
+  detectIntent,
+  type ConversationMemoryData,
+  type DialogueTurn,
+  type LearningStats,
+  type RespondContext,
+  type DialogueIntent,
+} from "./dialogue/index.js";

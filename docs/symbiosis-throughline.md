@@ -27,7 +27,9 @@ In code: `ChannelActivityTracker` + `u_presence`. Language / proximics / visual 
 
 **Visual ink:** hold-drag paints a fading light trail (`pushInk` / `u_ink*`) on the visual channel, alongside water cavities.
 
-Fluxa today: language + visceral paralanguage (`expressVisceral`); Filament as on-screen proximics; ink as gesture vision.
+**Local dialogue:** speak *to* Anima. `LivingConversation` places reply text at the Anima locus (not a chat box). `LocalDialogueEngine` learns in `localStorage`. See [`synaptic-bridge.md`](synaptic-bridge.md).
+
+Fluxa today: language + visceral paralanguage (`expressVisceral`); Filament as on-screen proximics; ink as gesture vision; local chat as living text.
 
 ## Map onto Fluxa
 

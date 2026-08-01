@@ -22,6 +22,7 @@ import {
   type LifecycleSnapshot,
 } from "../lifecycle/FluxaLifecycleEngine.js";
 import type { VisceralIntent } from "../anima/types.js";
+import { AnimaLocusStore } from "../anima/AnimaLocusStore.js";
 import {
   ChannelActivityTracker,
   type ChannelActivityOptions,
@@ -51,6 +52,7 @@ export interface FluxaEngine {
   readonly agitation: UserAgitationTracker;
   readonly lifecycle: FluxaLifecycleEngine;
   readonly channels: ChannelActivityTracker;
+  readonly animaLocus: AnimaLocusStore;
   readonly running: boolean;
   readonly resting: boolean;
   start: () => void;
@@ -128,6 +130,7 @@ export class HeightmapSimulator {
   readonly synaptic: SynapticBridge;
   readonly lifecycle: FluxaLifecycleEngine;
   readonly channels: ChannelActivityTracker;
+  readonly animaLocus = new AnimaLocusStore();
 
   private pingPong: PingPongTarget;
   private wave: Pass;
@@ -597,6 +600,12 @@ export class HeightmapSimulator {
     const animaUvX = 0.5 + (this.pointerUv.x - 0.5) * affinityPull * 0.28;
     const animaUvY = 0.5 + (this.pointerUv.y - 0.5) * affinityPull * 0.28;
     const animaRadius = 0.09 + 0.04 * lifeEnergy + 0.02 * breath;
+    this.animaLocus.set({
+      x: animaUvX,
+      y: animaUvY,
+      radius: animaRadius,
+      presenceGain: this.channelSnap.presenceGain,
+    });
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, canvas.width, canvas.height);
@@ -715,6 +724,9 @@ export function createEngine(
     },
     get channels() {
       return sim.channels;
+    },
+    get animaLocus() {
+      return sim.animaLocus;
     },
     get running() {
       return sim.isRunning;

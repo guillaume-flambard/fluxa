@@ -33,6 +33,11 @@ Vector $\vec{V} = [s, e, a]$ ∈ [0,1]³ maps to:
 - `SynapticBridge` — applies visceral state to homeostasis + affinity
 - `UserAgitationTracker` — EMA of clicks / impulses → `user_agitation`
 - `formatPerceptionNote` — `[System Note: User agitation is at X/1.0]`
+- **`LocalDialogueEngine`** — no API key: ultra-light local learner (lexicon, motifs, associations in `localStorage`). Composes replies and streams the same JSON wire via `mockVisceralStream` → `feedVisceralChunk`. Not a foundation model; continuity and systematic learning are real.
+
+## Local dialogue vs cloud LLM
+
+Prefer `LocalDialogueEngine` + `LivingConversation` (speech at Anima locus) for keyless conversation coupled to the membrane. Cloud clients remain optional hosts that must emit the same `reply` + `visceral_state` shape.
 
 ## System prompt sketch (for future host)
 

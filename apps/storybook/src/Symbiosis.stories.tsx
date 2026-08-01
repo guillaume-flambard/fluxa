@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react";
 import {
+  DialoguePanel,
   FluxaProvider,
   useAnima,
   useChannels,
@@ -148,6 +149,7 @@ function LivingStory({ idleThresholdSec }: { idleThresholdSec: number }) {
         }}
       >
         <LivingPanel />
+        <DialoguePanel />
       </FluxaProvider>
     </div>
   );

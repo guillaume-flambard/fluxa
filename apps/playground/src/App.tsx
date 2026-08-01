@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import {
+  DialoguePanel,
   FluxaComponent,
   FluxaProvider,
   useAnima,
@@ -142,15 +143,16 @@ export function App() {
           Fluxa / Living link
         </p>
         <h1 style={{ margin: "8px 0 0", fontWeight: 500, fontSize: 28 }}>
-          Drag paints light. Type couples.
+          Parle a Anima.
         </h1>
         <p style={{ margin: "10px 0 0", opacity: 0.7, lineHeight: 1.45 }}>
-          Hold and drag for visual ink along the gesture. Move for Filament.
-          Type for language. Silence dims presence.
+          L&apos;entite au centre te repond. Tes mots naissent sous elle ; les
+          siens au-dessus. Drag pour peindre. Silence attenue la presence.
         </p>
       </div>
 
       <LivingHud />
+      <DialoguePanel />
 
       <FluxaComponent
         as="button"
