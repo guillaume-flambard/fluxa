@@ -36,3 +36,21 @@ export {
   type SynapticBridgeOptions,
   type MockStreamOptions,
 } from "./synaptic/index.js";
+export {
+  FluxaLifecycleEngine,
+  type LifecycleMode,
+  type LifecycleSnapshot,
+  type FluxaLifecycleOptions,
+} from "./lifecycle/FluxaLifecycleEngine.js";
+export {
+  deriveAnimaPhase,
+  type AnimaPhase,
+  type VisceralIntent,
+} from "./anima/types.js";
+export {
+  ChannelActivityTracker,
+  type CommChannel,
+  type PresenceState,
+  type ChannelSnapshot,
+  type ChannelActivityOptions,
+} from "./channels/index.js";

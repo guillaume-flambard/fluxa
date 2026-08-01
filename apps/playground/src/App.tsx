@@ -1,8 +1,18 @@
-import { FluxaComponent, FluxaProvider, useFluxa, useHomeostasis } from "@fluxa/react";
+import type { CSSProperties } from "react";
+import {
+  FluxaComponent,
+  FluxaProvider,
+  useAnima,
+  useChannels,
+  useFluxa,
+  useHomeostasis,
+} from "@fluxa/react";
 
-function MetabolismMeters() {
+function LivingHud() {
   const meta = useHomeostasis();
-  const { engine } = useFluxa();
+  const { phase, lifecycle } = useAnima();
+  const channels = useChannels();
+  const { engine, recordLanguageInput, forceSilence } = useFluxa();
 
   return (
     <div
@@ -17,43 +27,62 @@ function MetabolismMeters() {
         background: "rgba(4, 12, 24, 0.55)",
         border: "1px solid rgba(180, 210, 255, 0.25)",
         padding: "12px 14px",
-        minWidth: 220,
+        minWidth: 260,
       }}
     >
-      <div style={{ marginBottom: 8, letterSpacing: "0.12em", opacity: 0.6 }}>
-        HOMEOSTASIS
+      <div style={{ marginBottom: 6, letterSpacing: "0.12em", opacity: 0.6 }}>
+        ANIMA · {phase.toUpperCase()} · {channels.presence.toUpperCase()}
       </div>
-      <Meter label="stress" value={meta.stress} />
-      <Meter label="breath" value={(meta.breath + 1) / 2} />
-      <Meter label="energy" value={Math.min(1, Math.max(0, meta.energy))} />
-      <div style={{ marginTop: 8, opacity: meta.fatigued ? 1 : 0.45 }}>
-        {meta.fatigued ? "FATIGUED — sim throttled" : "recovered"}
+      <Meter label="language" value={channels.languageIntensity} />
+      <Meter label="proximics" value={channels.proximicsIntensity} />
+      <Meter label="presence" value={channels.presenceGain} />
+      <Meter label="stress" value={Math.max(meta.stress, lifecycle.stress)} />
+      <Meter label="energy" value={Math.min(1, Math.max(0, Math.max(meta.energy, lifecycle.energy)))} />
+      <Meter label="Ia" value={lifecycle.autonomyIndex} />
+      <div style={{ marginTop: 8, opacity: 0.55, fontSize: 11 }}>
+        channel {channels.active} · type anywhere for language
       </div>
-      <button
-        type="button"
-        style={{
-          marginTop: 10,
-          padding: "6px 10px",
-          cursor: "pointer",
-          background: "rgba(255, 120, 100, 0.2)",
-          border: "1px solid rgba(255, 160, 140, 0.45)",
-          color: "#ffe8e0",
-        }}
-        onClick={() => {
-          engine?.homeostasis.excite(0.35);
-          engine?.wake();
-        }}
-      >
-        Poke stress
-      </button>
+      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+        <button
+          type="button"
+          style={btnStyle}
+          onClick={() => {
+            engine?.homeostasis.excite(0.35);
+            engine?.wake();
+          }}
+        >
+          Poke stress
+        </button>
+        <button
+          type="button"
+          style={btnStyle}
+          onClick={() => {
+            recordLanguageInput(4);
+          }}
+        >
+          Speak
+        </button>
+        <button type="button" style={btnStyle} onClick={() => forceSilence()}>
+          Silence
+        </button>
+      </div>
     </div>
   );
 }
 
+const btnStyle: CSSProperties = {
+  padding: "6px 10px",
+  cursor: "pointer",
+  background: "rgba(255, 120, 100, 0.15)",
+  border: "1px solid rgba(255, 160, 140, 0.4)",
+  color: "#ffe8e0",
+  fontSize: 11,
+};
+
 function Meter({ label, value }: { label: string; value: number }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
-      <span style={{ width: 52, opacity: 0.7 }}>{label}</span>
+      <span style={{ width: 68, opacity: 0.7 }}>{label}</span>
       <div
         style={{
           flex: 1,
@@ -67,7 +96,7 @@ function Meter({ label, value }: { label: string; value: number }) {
           style={{
             width: `${Math.round(value * 100)}%`,
             height: "100%",
-            background: "linear-gradient(90deg, #5ab0ff, #ff7a6a)",
+            background: "linear-gradient(90deg, #5ab0ff, #7b5cff)",
           }}
         />
       </div>
@@ -89,6 +118,7 @@ export function App() {
         baseColor: [0.03, 0.1, 0.2],
         highlight: [0.55, 0.85, 1.0],
         warmColor: [0.75, 0.28, 0.3],
+        channels: { silenceThresholdSec: 2.5 },
       }}
     >
       <div
@@ -109,17 +139,18 @@ export function App() {
             opacity: 0.55,
           }}
         >
-          Fluxa / v2 Homeostasis
+          Fluxa / Living link
         </p>
         <h1 style={{ margin: "8px 0 0", fontWeight: 500, fontSize: 28 }}>
-          Breath at rest — stress warms the field
+          Language couples. Silence dims.
         </h1>
         <p style={{ margin: "10px 0 0", opacity: 0.7, lineHeight: 1.45 }}>
-          Click for cavities + excitation. Hold bursts to trigger fatigue.
+          Move for Filament. Type for language channel. Presence is coupled only
+          while the link signals.
         </p>
       </div>
 
-      <MetabolismMeters />
+      <LivingHud />
 
       <FluxaComponent
         as="button"

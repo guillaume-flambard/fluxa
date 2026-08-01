@@ -16,6 +16,17 @@ import {
 import { SynapticBridge } from "../synaptic/SynapticBridge.js";
 import { UserAgitationTracker } from "../synaptic/UserAgitationTracker.js";
 import type { VisceralPartial, VisceralState } from "../synaptic/types.js";
+import {
+  FluxaLifecycleEngine,
+  type FluxaLifecycleOptions,
+  type LifecycleSnapshot,
+} from "../lifecycle/FluxaLifecycleEngine.js";
+import type { VisceralIntent } from "../anima/types.js";
+import {
+  ChannelActivityTracker,
+  type ChannelActivityOptions,
+  type ChannelSnapshot,
+} from "../channels/ChannelActivityTracker.js";
 
 export interface FluxaEngineOptions {
   resolution?: number;
@@ -28,6 +39,8 @@ export interface FluxaEngineOptions {
   highlight?: [number, number, number];
   warmColor?: [number, number, number];
   homeostasis?: HomeostasisOptions;
+  lifecycle?: FluxaLifecycleOptions;
+  channels?: ChannelActivityOptions;
 }
 
 export interface FluxaEngine {
@@ -36,6 +49,8 @@ export interface FluxaEngine {
   readonly homeostasis: HomeostasisEngine;
   readonly synaptic: SynapticBridge;
   readonly agitation: UserAgitationTracker;
+  readonly lifecycle: FluxaLifecycleEngine;
+  readonly channels: ChannelActivityTracker;
   readonly running: boolean;
   readonly resting: boolean;
   start: () => void;
@@ -43,12 +58,17 @@ export interface FluxaEngine {
   wake: () => void;
   resize: (cssWidth: number, cssHeight: number, dpr?: number) => void;
   clientToUv: (clientX: number, clientY: number) => { x: number; y: number };
-  /** Feed LLM / mock stream chunk into visceral parser. */
   feedVisceralChunk: (chunk: string) => VisceralPartial;
   applyVisceral: (state: Partial<VisceralState>) => void;
+  expressVisceral: (intent: VisceralIntent) => void;
   resetVisceralStream: () => void;
   setPointerUv: (x: number, y: number) => void;
   recordClick: () => void;
+  recordHumanActivity: (velocity?: number) => void;
+  recordLanguageInput: (charCount?: number) => void;
+  forceSilence: () => void;
+  reportCodeHealth: (opts: { hasErrors: boolean }) => void;
+  forceIdleForTesting: () => void;
   dispose: () => void;
 }
 
@@ -104,6 +124,8 @@ export class HeightmapSimulator {
   readonly homeostasis: HomeostasisEngine;
   readonly agitation: UserAgitationTracker;
   readonly synaptic: SynapticBridge;
+  readonly lifecycle: FluxaLifecycleEngine;
+  readonly channels: ChannelActivityTracker;
 
   private pingPong: PingPongTarget;
   private wave: Pass;
@@ -128,8 +150,12 @@ export class HeightmapSimulator {
   private cssHeight = 1;
   private lastTs = 0;
   private meta: HomeostasisSnapshot;
+  private life: LifecycleSnapshot;
+  private channelSnap: ChannelSnapshot;
   private affinity = 0;
   private pointerUv = { x: 0.5, y: 0.5 };
+  private simTime = 0;
+  private channelNudgeAcc = 0;
 
   constructor(canvas: HTMLCanvasElement, options: FluxaEngineOptions = {}) {
     this.ctx = createGL(canvas);
@@ -145,6 +171,8 @@ export class HeightmapSimulator {
     this.ripples = new RippleManager();
     this.homeostasis = new HomeostasisEngine(options.homeostasis);
     this.agitation = new UserAgitationTracker();
+    this.lifecycle = new FluxaLifecycleEngine(options.lifecycle);
+    this.channels = new ChannelActivityTracker(options.channels);
     this.synaptic = new SynapticBridge({
       homeostasis: this.homeostasis,
       onAffinity: (a) => {
@@ -152,6 +180,8 @@ export class HeightmapSimulator {
       },
     });
     this.meta = this.homeostasis.getSnapshot();
+    this.life = this.lifecycle.getSnapshot();
+    this.channelSnap = this.channels.getSnapshot();
 
     const { gl } = this.ctx;
     const { w, h } = simSize(this.longestEdge, 16, 9);
@@ -181,6 +211,11 @@ export class HeightmapSimulator {
       "u_rdMix",
       "u_attraction",
       "u_pointerUv",
+      "u_autonomy",
+      "u_time",
+      "u_animaUv",
+      "u_animaRadius",
+      "u_presence",
     ]);
   }
 
@@ -247,12 +282,50 @@ export class HeightmapSimulator {
   }
 
   setPointerUv(x: number, y: number): void {
+    const dx = x - this.pointerUv.x;
+    const dy = y - this.pointerUv.y;
     this.pointerUv = { x, y };
     this.agitation.setPointerUv(x, y);
+    const moved = Math.hypot(dx, dy);
+    if (moved > 0.002) {
+      this.channels.recordProximics(Math.min(0.45, moved * 8));
+    }
   }
 
   recordClick(): void {
     this.agitation.recordClick();
+    this.lifecycle.recordHumanActivity(0.4);
+    this.channels.recordVisual(0.4);
+    this.channels.recordProximics(0.2);
+  }
+
+  recordHumanActivity(velocity = 0.35): void {
+    this.lifecycle.recordHumanActivity(velocity);
+  }
+
+  recordLanguageInput(charCount = 1): void {
+    const n = Math.max(1, charCount);
+    this.channels.recordLanguage(Math.min(0.55, 0.12 + n * 0.04));
+    this.lifecycle.recordHumanActivity(0.2 + Math.min(0.4, n * 0.02));
+    this.wake();
+  }
+
+  forceSilence(): void {
+    this.channels.forceSilence();
+    this.wake();
+  }
+
+  reportCodeHealth(opts: { hasErrors: boolean }): void {
+    this.lifecycle.reportCodeHealth(opts);
+    if (opts.hasErrors) {
+      this.homeostasis.excite(0.2);
+    }
+    this.wake();
+  }
+
+  forceIdleForTesting(): void {
+    this.lifecycle.forceIdleForTesting();
+    this.wake();
   }
 
   feedVisceralChunk(chunk: string): VisceralPartial {
@@ -263,6 +336,87 @@ export class HeightmapSimulator {
 
   applyVisceral(state: Partial<VisceralState>): void {
     this.synaptic.applyVisceral(state);
+    const intent: {
+      stress?: number;
+      energy?: number;
+      affinity?: number;
+    } = {};
+    if (state.stress_level != null) intent.stress = state.stress_level;
+    if (state.energy_level != null) intent.energy = state.energy_level;
+    if (state.affinity_level != null) intent.affinity = state.affinity_level;
+    this.lifecycle.applyVisceralIntent(intent);
+    this.wake();
+  }
+
+  /**
+   * Somatic bridge — single push for Phase I/II/III intent.
+   * Prefer this over ad-hoc uniform poking.
+   */
+  expressVisceral(intent: VisceralIntent): void {
+    if (intent.phase === "symbiosis") {
+      this.lifecycle.recordHumanActivity(0.6);
+      const stress = intent.stress ?? 0.12;
+      const energy = intent.energy ?? 0.78;
+      const affinity = intent.affinity ?? 0.72;
+      this.synaptic.applyVisceral({
+        stress_level: stress,
+        energy_level: energy,
+        affinity_level: affinity,
+      });
+      this.lifecycle.applyVisceralIntent({ stress, energy, affinity });
+      this.lifecycle.reportCodeHealth({ hasErrors: false });
+    } else if (intent.phase === "friction") {
+      this.lifecycle.recordHumanActivity(0.2);
+      const stress = intent.stress ?? 0.82;
+      const energy = intent.energy ?? 0.55;
+      const affinity = intent.affinity ?? 0.45;
+      this.synaptic.applyVisceral({
+        stress_level: stress,
+        energy_level: energy,
+        affinity_level: affinity,
+      });
+      this.lifecycle.applyVisceralIntent({ stress, energy, affinity });
+      this.reportCodeHealth({ hasErrors: true });
+    } else if (intent.phase === "dream") {
+      const stress = intent.stress ?? 0.15;
+      const energy = intent.energy ?? 0.65;
+      const affinity = intent.affinity ?? 0.8;
+      this.synaptic.applyVisceral({
+        stress_level: stress,
+        energy_level: energy,
+        affinity_level: affinity,
+      });
+      this.lifecycle.applyVisceralIntent({ stress, energy, affinity });
+      this.lifecycle.enterDream();
+    } else {
+      // Field-only update (no phase preset)
+      const wire: Partial<VisceralState> = {};
+      const life: { stress?: number; energy?: number; affinity?: number } = {};
+      if (intent.stress != null) {
+        wire.stress_level = intent.stress;
+        life.stress = intent.stress;
+      }
+      if (intent.energy != null) {
+        wire.energy_level = intent.energy;
+        life.energy = intent.energy;
+      }
+      if (intent.affinity != null) {
+        wire.affinity_level = intent.affinity;
+        life.affinity = intent.affinity;
+      }
+      if (Object.keys(wire).length > 0) {
+        this.synaptic.applyVisceral(wire);
+        this.lifecycle.applyVisceralIntent(life);
+      }
+    }
+
+    if (intent.hasErrors != null && intent.phase !== "friction") {
+      this.reportCodeHealth({ hasErrors: intent.hasErrors });
+    }
+    if (intent.forceIdle && intent.phase !== "dream") {
+      this.lifecycle.enterDream();
+    }
+
     this.wake();
   }
 
@@ -289,6 +443,18 @@ export class HeightmapSimulator {
     this.lastTs = ts;
     this.meta = this.homeostasis.tick(dt);
     this.agitation.tick(dt, ts);
+    this.channelSnap = this.channels.tick(dt);
+    this.simTime += dt;
+    this.life = this.lifecycle.tick(dt, {
+      homeoStress: this.meta.stress,
+      homeoEnergy: this.meta.energy,
+    });
+
+    this.channelNudgeAcc += dt;
+    if (this.channelNudgeAcc >= 0.45) {
+      this.channelNudgeAcc = 0;
+      this.nudgeFromChannels();
+    }
 
     const fatigued = this.meta.fatigued;
     const impulses = this.ripples.drain(fatigued ? 4 : 8);
@@ -372,6 +538,16 @@ export class HeightmapSimulator {
     const { read, width, height } = this.pingPong;
     const pass = this.render;
     const { stress, breath, energy } = this.meta;
+    const attraction =
+      this.life.mode === "dream"
+        ? Math.max(this.affinity, this.life.affinity)
+        : Math.max(this.affinity, this.life.affinity * 0.5);
+    const lifeEnergy = Math.max(energy, this.life.energy);
+    const affinityPull = Math.max(this.affinity, this.life.affinity);
+    // Anima drifts from viewport center toward pointer with affinity
+    const animaUvX = 0.5 + (this.pointerUv.x - 0.5) * affinityPull * 0.28;
+    const animaUvY = 0.5 + (this.pointerUv.y - 0.5) * affinityPull * 0.28;
+    const animaRadius = 0.09 + 0.04 * lifeEnergy + 0.02 * breath;
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, canvas.width, canvas.height);
@@ -400,18 +576,48 @@ export class HeightmapSimulator {
       this.warmColor[1],
       this.warmColor[2],
     );
-    gl.uniform1f(pass.uniforms["u_stress"] ?? null, stress);
+    gl.uniform1f(
+      pass.uniforms["u_stress"] ?? null,
+      Math.max(stress, this.life.stress),
+    );
     gl.uniform1f(pass.uniforms["u_breath"] ?? null, breath);
-    gl.uniform1f(pass.uniforms["u_energy"] ?? null, energy);
+    gl.uniform1f(pass.uniforms["u_energy"] ?? null, lifeEnergy);
     gl.uniform1f(pass.uniforms["u_rdMix"] ?? null, 0);
-    gl.uniform1f(pass.uniforms["u_attraction"] ?? null, this.affinity);
+    gl.uniform1f(pass.uniforms["u_attraction"] ?? null, attraction);
     gl.uniform2f(
       pass.uniforms["u_pointerUv"] ?? null,
       this.pointerUv.x,
       this.pointerUv.y,
     );
+    gl.uniform1f(
+      pass.uniforms["u_autonomy"] ?? null,
+      this.life.autonomyIndex,
+    );
+    gl.uniform1f(pass.uniforms["u_time"] ?? null, this.simTime);
+    gl.uniform2f(pass.uniforms["u_animaUv"] ?? null, animaUvX, animaUvY);
+    gl.uniform1f(pass.uniforms["u_animaRadius"] ?? null, animaRadius);
+    gl.uniform1f(
+      pass.uniforms["u_presence"] ?? null,
+      this.channelSnap.presenceGain,
+    );
 
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  /** Soft rate-limited visceral nudge from channel intensities. */
+  private nudgeFromChannels(): void {
+    const ch = this.channelSnap;
+    if (ch.presence === "absent") return;
+    const lang = ch.languageIntensity;
+    const prox = ch.proximicsIntensity;
+    if (lang < 0.08 && prox < 0.08) return;
+    const energy = Math.min(0.95, 0.45 + lang * 0.4 + prox * 0.15);
+    const affinity = Math.min(0.95, 0.4 + lang * 0.35 + prox * 0.25);
+    this.synaptic.applyVisceral({
+      energy_level: energy,
+      affinity_level: affinity,
+    });
+    this.lifecycle.applyVisceralIntent({ energy, affinity });
   }
 }
 
@@ -437,6 +643,12 @@ export function createEngine(
     get agitation() {
       return sim.agitation;
     },
+    get lifecycle() {
+      return sim.lifecycle;
+    },
+    get channels() {
+      return sim.channels;
+    },
     get running() {
       return sim.isRunning;
     },
@@ -450,9 +662,15 @@ export function createEngine(
     clientToUv: (x, y) => sim.clientToUv(x, y),
     feedVisceralChunk: (c) => sim.feedVisceralChunk(c),
     applyVisceral: (s) => sim.applyVisceral(s),
+    expressVisceral: (i) => sim.expressVisceral(i),
     resetVisceralStream: () => sim.resetVisceralStream(),
     setPointerUv: (x, y) => sim.setPointerUv(x, y),
     recordClick: () => sim.recordClick(),
+    recordHumanActivity: (v) => sim.recordHumanActivity(v),
+    recordLanguageInput: (n) => sim.recordLanguageInput(n),
+    forceSilence: () => sim.forceSilence(),
+    reportCodeHealth: (o) => sim.reportCodeHealth(o),
+    forceIdleForTesting: () => sim.forceIdleForTesting(),
     dispose: () => sim.dispose(),
   };
 }

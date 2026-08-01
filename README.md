@@ -13,11 +13,11 @@ Procedural organic design system. UI as a continuous reactive fluid simulated wi
 
 ## Location
 
-`~/projects/fluxa` — pnpm monorepo
+`~/projects/fluxa` : pnpm monorepo
 
-- `@fluxa/core` — framework-agnostic engine
-- `@fluxa/react` — Provider + Component bbox/a11y
-- `apps/playground` — Vite demo
+- `@fluxa/core` : framework-agnostic engine
+- `@fluxa/react` : Provider + Component bbox/a11y
+- `apps/playground` : Vite demo
 
 ## Stack (locked)
 
@@ -30,9 +30,13 @@ No Next.js / Three.js / WebGPU / WASM in the foundation.
 cd ~/projects/fluxa
 pnpm install
 pnpm dev          # playground :5173
-pnpm storybook    # metabolism + synaptic stories :6007
+pnpm storybook    # membrane + anima + lifecycle stories :6007
 ```
+
+## Docs
+
+Identity and phases: [`docs/anima-core.md`](docs/anima-core.md). Symbiosis throughline: [`docs/symbiosis-throughline.md`](docs/symbiosis-throughline.md). Agent contract: [`AGENTS.md`](AGENTS.md).
 
 ## Note
 
-Started during PayKit bet freeze (J14) as an explicit override — keep scope to Step 1 engine until freeze ends unless prioritized.
+Started during PayKit bet freeze (J14) as an explicit override. Keep scope to Step 1 engine until freeze ends unless prioritized.

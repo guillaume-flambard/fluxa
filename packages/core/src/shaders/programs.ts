@@ -85,6 +85,10 @@ void main() {
 }
 `;
 
+/**
+ * Chorion (abyssal water) + Anima orb + Filament ribbon.
+ * Emotional palette from stress / energy / autonomy.
+ */
 export const RENDER_FRAG = `#version 300 es
 precision highp float;
 
@@ -95,22 +99,41 @@ uniform sampler2D u_state;
 uniform vec2 u_texel;
 uniform vec3 u_baseColor;
 uniform vec3 u_highlight;
-uniform vec3 u_warmColor;   // stress palette (rose→orange intent)
-uniform float u_stress;     // S ∈ [0,1]
-uniform float u_breath;     // P ∈ [-1,1]
-uniform float u_energy;     // derived metabolic energy
-// Stub for future Gray-Scott mix (unused)
+uniform vec3 u_warmColor;
+uniform float u_stress;
+uniform float u_breath;
+uniform float u_energy;
 uniform float u_rdMix;
-uniform float u_attraction; // affinity ∈ [0,1] — pull highlight toward pointer
-uniform vec2 u_pointerUv;   // last pointer UV
+uniform float u_attraction;
+uniform vec2 u_pointerUv;
+uniform float u_autonomy;
+uniform float u_time;
+uniform vec2 u_animaUv;
+uniform float u_animaRadius;
+uniform float u_presence;
+
+// Distance to quadratic Bezier (approximate via subdivision samples)
+float distToFilament(vec2 p, vec2 a, vec2 b, vec2 c) {
+  float d = 1e5;
+  for (int i = 0; i <= 12; i++) {
+    float t = float(i) / 12.0;
+    float s = 1.0 - t;
+    vec2 q = s * s * a + 2.0 * s * t * b + t * t * c;
+    d = min(d, length(p - q));
+  }
+  return d;
+}
 
 void main() {
-  float h = texture(u_state, v_uv).r;
+  // Chorion warp — leave cartesian grid as autonomy rises
+  vec2 warp = u_autonomy * sin(v_uv.yx * 10.0 + u_time) * 0.08;
+  vec2 uv = v_uv + warp;
 
-  float hL = texture(u_state, v_uv + vec2(-u_texel.x, 0.0)).r;
-  float hR = texture(u_state, v_uv + vec2( u_texel.x, 0.0)).r;
-  float hD = texture(u_state, v_uv + vec2(0.0, -u_texel.y)).r;
-  float hU = texture(u_state, v_uv + vec2(0.0,  u_texel.y)).r;
+  float h = texture(u_state, uv).r;
+  float hL = texture(u_state, uv + vec2(-u_texel.x, 0.0)).r;
+  float hR = texture(u_state, uv + vec2( u_texel.x, 0.0)).r;
+  float hD = texture(u_state, uv + vec2(0.0, -u_texel.y)).r;
+  float hU = texture(u_state, uv + vec2(0.0,  u_texel.y)).r;
 
   vec3 n = normalize(vec3(hL - hR, hD - hU, 0.08));
   vec3 light = normalize(vec3(0.35, 0.55, 1.0));
@@ -118,20 +141,64 @@ void main() {
   vec3 halfV = normalize(light + vec3(0.0, 0.0, 1.0));
   float spec = pow(clamp(dot(n, halfV), 0.0, 1.0), 48.0);
 
+  // Chorion: abyssal bioluminescence + water tissue
+  vec3 abyss = vec3(0.01, 0.04, 0.07);
   vec3 cool = mix(u_baseColor, u_highlight, diff * 0.5);
   vec3 warm = mix(u_warmColor, u_highlight, diff * 0.45);
-  vec3 color = mix(cool, warm, clamp(u_stress, 0.0, 1.0));
-  color += cool * (h * 1.8);
-  color += vec3(spec) * (0.45 + 0.25 * u_energy);
-  float lum = 0.88 + 0.12 * u_breath + 0.05 * u_energy;
-  color *= lum;
-  color = mix(color, color, u_rdMix);
+  vec3 water = mix(cool, warm, clamp(u_stress, 0.0, 1.0));
+  water += cool * (h * 1.8);
+  water += vec3(spec) * (0.45 + 0.25 * u_energy);
+  float lum = 0.82 + 0.12 * u_breath + 0.06 * u_energy;
+  water *= lum;
+  water = mix(abyss, water, 0.55 + 0.35 * clamp(abs(h) * 4.0 + diff, 0.0, 1.0));
+  water = mix(water, water, u_rdMix);
 
-  // Affinity stub: soft glow toward pointer (future metaball attractor)
-  float d = distance(v_uv, u_pointerUv);
-  float pull = exp(-d * d * 18.0) * u_attraction;
-  color = mix(color, u_highlight, pull * 0.55);
+  float pattern = sin(uv.x * 20.0 + u_time) * cos(uv.y * 20.0 - u_time);
+  vec3 dreamField = vec3(0.12, 0.06, 0.28) + pattern * 0.08 * u_energy;
+  float dreamMix = smoothstep(0.5, 1.0, u_autonomy);
+  vec3 chorion = mix(water, dreamField, dreamMix * 0.65);
 
-  fragColor = vec4(color, 1.0);
+  // --- Anima: living orb ---
+  float pulse = u_animaRadius * (1.0 + 0.12 * u_breath + 0.08 * u_energy);
+  float animaDist = length(v_uv - u_animaUv);
+  float animaCore = smoothstep(pulse, pulse * 0.35, animaDist);
+  float animaHalo = exp(-animaDist * animaDist / max(pulse * pulse * 4.0, 1e-5));
+
+  vec3 cyan = vec3(0.15, 0.85, 0.78);
+  vec3 amber = vec3(0.95, 0.65, 0.18);
+  vec3 violet = vec3(0.45, 0.25, 0.95);
+  vec3 darkRed = vec3(0.55, 0.05, 0.08);
+
+  vec3 animaCol = mix(cyan, amber, clamp(u_energy, 0.0, 1.0));
+  animaCol = mix(animaCol, violet, smoothstep(0.5, 1.0, u_autonomy));
+  animaCol = mix(animaCol, darkRed, smoothstep(0.6, 1.0, u_stress));
+  animaCol *= 0.75 + 0.35 * u_breath;
+  // Presence gain: honest silence gap dims Anima / Filament (no ghost companion)
+  float presence = clamp(u_presence, 0.0, 1.0);
+
+  chorion = mix(chorion, animaCol, animaHalo * 0.55 * presence);
+  chorion = mix(chorion, animaCol * 1.35, animaCore * 0.9 * (0.35 + 0.65 * presence));
+
+  // Soft attraction glow near pointer (legacy)
+  float dPtr = distance(v_uv, u_pointerUv);
+  float pull = exp(-dPtr * dPtr * 18.0) * u_attraction * 0.35 * presence;
+  chorion = mix(chorion, animaCol, pull);
+
+  // --- Filament: umbilical ribbon pointer → anima ---
+  vec2 mid = 0.5 * (u_pointerUv + u_animaUv);
+  vec2 perp = normalize(vec2(
+    -(u_animaUv.y - u_pointerUv.y),
+    u_animaUv.x - u_pointerUv.x
+  ) + 1e-5);
+  float bend = (0.08 + 0.12 * u_stress) * sin(u_time * (2.0 + u_stress * 4.0));
+  vec2 ctrl = mid + perp * bend;
+  float filDist = distToFilament(v_uv, u_pointerUv, ctrl, u_animaUv);
+  float filWidth = 0.008 + 0.006 * u_stress + 0.004 * u_attraction;
+  float filament = exp(-filDist * filDist / (filWidth * filWidth));
+  float tension = clamp(length(u_pointerUv - u_animaUv) * 1.2, 0.0, 1.0);
+  vec3 filCol = mix(animaCol, vec3(0.9, 0.95, 1.0), 0.35);
+  chorion += filCol * filament * (0.45 + 0.4 * tension) * (0.5 + 0.5 * u_attraction) * presence;
+
+  fragColor = vec4(chorion, 1.0);
 }
 `;

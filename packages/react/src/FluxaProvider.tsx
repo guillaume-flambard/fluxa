@@ -13,10 +13,15 @@ import {
 } from "react";
 import {
   createEngine,
+  deriveAnimaPhase,
+  type AnimaPhase,
+  type ChannelSnapshot,
   type FluxaEngine,
   type FluxaEngineOptions,
   type HomeostasisSnapshot,
+  type LifecycleSnapshot,
   type PerceptionSnapshot,
+  type VisceralIntent,
   type VisceralPartial,
   type VisceralState,
 } from "@fluxa/core";
@@ -35,7 +40,10 @@ export interface FluxaContextValue {
   unregisterComponent: (id: string) => void;
   feedVisceralChunk: (chunk: string) => VisceralPartial | null;
   applyVisceral: (state: Partial<VisceralState>) => void;
+  expressVisceral: (intent: VisceralIntent) => void;
   resetVisceralStream: () => void;
+  recordLanguageInput: (charCount?: number) => void;
+  forceSilence: () => void;
 }
 
 const FluxaContext = createContext<FluxaContextValue | null>(null);
@@ -54,6 +62,26 @@ const IDLE_PERCEPTION: PerceptionSnapshot = {
   user_agitation: 0,
   clicksPerSecond: 0,
   pointerUv: { x: 0.5, y: 0.5 },
+};
+
+const IDLE_LIFECYCLE: LifecycleSnapshot = {
+  stress: 0.1,
+  energy: 0.8,
+  affinity: 0.5,
+  autonomyIndex: 0,
+  mode: "react",
+  idleSeconds: 0,
+  autonomousTicks: 0,
+};
+
+const IDLE_CHANNELS: ChannelSnapshot = {
+  active: "silence",
+  languageIntensity: 0,
+  proximicsIntensity: 0,
+  visualIntensity: 0,
+  silenceSeconds: 0,
+  presence: "coupled",
+  presenceGain: 1,
 };
 
 export function useFluxa(): FluxaContextValue {
@@ -106,6 +134,47 @@ export function useVisceralDriver(): {
   };
 }
 
+/** Lifecycle autonomy (react / symbiosis / dream). */
+export function useLifecycle(): LifecycleSnapshot {
+  const { engine } = useFluxa();
+  return useSyncExternalStore(
+    (onStoreChange) => {
+      if (!engine) return () => undefined;
+      return engine.lifecycle.subscribe(onStoreChange);
+    },
+    () => engine?.lifecycle.getSnapshot() ?? IDLE_LIFECYCLE,
+    () => IDLE_LIFECYCLE,
+  );
+}
+
+/** Anima somatic bridge — derived phase + expressVisceral. */
+export function useAnima(): {
+  lifecycle: LifecycleSnapshot;
+  expressVisceral: (intent: VisceralIntent) => void;
+  phase: AnimaPhase;
+} {
+  const { expressVisceral } = useFluxa();
+  const lifecycle = useLifecycle();
+  const phase = deriveAnimaPhase({
+    mode: lifecycle.mode,
+    stress: lifecycle.stress,
+  });
+  return { lifecycle, expressVisceral, phase };
+}
+
+/** Symbol-to-body channel activity + presence (coupled | absent). */
+export function useChannels(): ChannelSnapshot {
+  const { engine } = useFluxa();
+  return useSyncExternalStore(
+    (onStoreChange) => {
+      if (!engine) return () => undefined;
+      return engine.channels.subscribe(onStoreChange);
+    },
+    () => engine?.channels.getSnapshot() ?? IDLE_CHANNELS,
+    () => IDLE_CHANNELS,
+  );
+}
+
 export interface FluxaProviderProps {
   children?: ReactNode;
   engineOptions?: FluxaEngineOptions;
@@ -144,8 +213,26 @@ export function FluxaProvider({
     [engine],
   );
 
+  const expressVisceral = useCallback(
+    (intent: VisceralIntent) => {
+      engine?.expressVisceral(intent);
+    },
+    [engine],
+  );
+
   const resetVisceralStream = useCallback(() => {
     engine?.resetVisceralStream();
+  }, [engine]);
+
+  const recordLanguageInput = useCallback(
+    (charCount?: number) => {
+      engine?.recordLanguageInput(charCount);
+    },
+    [engine],
+  );
+
+  const forceSilence = useCallback(() => {
+    engine?.forceSilence();
   }, [engine]);
 
   useEffect(() => {
@@ -176,6 +263,7 @@ export function FluxaProvider({
       eng.ripples.pointerDown(uv.x, uv.y);
       eng.homeostasis.excite();
       eng.recordClick();
+      eng.recordHumanActivity(0.5);
       eng.wake();
     };
 
@@ -183,6 +271,7 @@ export function FluxaProvider({
       const uv = eng.clientToUv(e.clientX, e.clientY);
       eng.setPointerUv(uv.x, uv.y);
       eng.ripples.pointerMove(uv.x, uv.y);
+      eng.recordHumanActivity(0.15);
       eng.wake();
     };
 
@@ -190,10 +279,22 @@ export function FluxaProvider({
       eng.ripples.pointerLeave();
     };
 
+    const onKeyDown = (e: KeyboardEvent) => {
+      // Ignore pure modifiers; language channel for printable / edit keys
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key.length === 1 || e.key === "Enter" || e.key === "Backspace") {
+        eng.recordLanguageInput(1);
+      } else {
+        eng.recordHumanActivity(0.15);
+      }
+      eng.wake();
+    };
+
     canvas.addEventListener("pointerdown", onPointerDown);
     canvas.addEventListener("pointermove", onPointerMove);
     canvas.addEventListener("pointerleave", onPointerLeave);
     canvas.addEventListener("pointerup", onPointerLeave);
+    window.addEventListener("keydown", onKeyDown);
 
     const ro = new ResizeObserver(syncSize);
     ro.observe(container);
@@ -203,6 +304,7 @@ export function FluxaProvider({
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerleave", onPointerLeave);
       canvas.removeEventListener("pointerup", onPointerLeave);
+      window.removeEventListener("keydown", onKeyDown);
       ro.disconnect();
       eng.dispose();
       setEngine(null);
@@ -217,7 +319,10 @@ export function FluxaProvider({
       unregisterComponent,
       feedVisceralChunk,
       applyVisceral,
+      expressVisceral,
       resetVisceralStream,
+      recordLanguageInput,
+      forceSilence,
     }),
     [
       engine,
@@ -225,7 +330,10 @@ export function FluxaProvider({
       unregisterComponent,
       feedVisceralChunk,
       applyVisceral,
+      expressVisceral,
       resetVisceralStream,
+      recordLanguageInput,
+      forceSilence,
     ],
   );
 
