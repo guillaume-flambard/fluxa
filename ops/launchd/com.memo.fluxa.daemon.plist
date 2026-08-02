@@ -13,7 +13,7 @@
 	<key>RunAtLoad</key>
 	<true/>
 	<key>KeepAlive</key>
-	<true/>
+	<false/>
 	<key>StandardOutPath</key>
 	<string>/Users/memo/Library/Logs/fluxa.stdout.log</string>
 	<key>StandardErrorPath</key>
@@ -24,6 +24,8 @@
 		<string>http://127.0.0.1:8787</string>
 		<key>FLUXA_OLLAMA_BASE</key>
 		<string>http://127.0.0.1:11434</string>
+		<key>FLUXA_OLLAMA_MODEL</key>
+		<string>qwen2.5:3b</string>
 		<key>FLUXA_PREFER_OLLAMA_LOCAL</key>
 		<string>1</string>
 		<key>PATH</key>

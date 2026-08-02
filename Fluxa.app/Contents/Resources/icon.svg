@@ -1,0 +1,41 @@
+<svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#0C1420;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1C3038;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#grad)"/>
+  
+  <!-- Network nodes -->
+  <circle cx="256" cy="150" r="40" fill="#B4DCF0" opacity="0.9"/>
+  <circle cx="150" cy="256" r="40" fill="#64B8C8" opacity="0.8"/>
+  <circle cx="362" cy="256" r="40" fill="#64B8C8" opacity="0.8"/>
+  <circle cx="256" cy="362" r="40" fill="#64B8C8" opacity="0.8"/>
+  <circle cx="200" cy="200" r="30" fill="#4096B0" opacity="0.7"/>
+  <circle cx="312" cy="200" r="30" fill="#4096B0" opacity="0.7"/>
+  <circle cx="200" cy="312" r="30" fill="#4096B0" opacity="0.7"/>
+  <circle cx="312" cy="312" r="30" fill="#4099B0" opacity="0.7"/>
+  
+  <!-- Center hub -->
+  <circle cx="256" cy="256" r="25" fill="#80C8D8" opacity="0.8"/>
+  
+  <!-- Connections -->
+  <line x1="256" y1="150" x2="150" y2="256" stroke="#78A8C8" stroke-width="3" opacity="0.6"/>
+  <line x1="256" y1="150" x2="362" y2="256" stroke="#78A8C8" stroke-width="3" opacity="0.6"/>
+  <line x1="256" y1="150" x2="256" y2="362" stroke="#78A8C8" stroke-width="3" opacity="0.6"/>
+  <line x1="150" y1="256" x2="362" y2="256" stroke="#78A8C8" stroke-width="3" opacity="0.6"/>
+  <line x1="362" y1="256" x2="256" y2="362" stroke="#78A8C8" stroke-width="3" opacity="0.6"/>
+  <line x1="256" y1="362" x2="150" y2="256" stroke="#78A8C8" stroke-width="3" opacity="0.6"/>
+  <line x1="200" y1="200" x2="312" y2="200" stroke="#5090A0" stroke-width="2" opacity="0.5"/>
+  <line x1="312" y1="200" x2="312" y2="312" stroke="#5090A0" stroke-width="2" opacity="0.5"/>
+  <line x1="312" y1="312" x2="200" y2="312" stroke="#5090A0" stroke-width="2" opacity="0.5"/>
+  <line x1="200" y1="312" x2="200" y2="200" stroke="#5090A0" stroke-width="2" opacity="0.5"/>
+  <line x1="256" y1="256" x2="200" y2="200" stroke="#5090A0" stroke-width="2" opacity="0.5"/>
+  <line x1="256" y1="256" x2="312" y2="200" stroke="#5090A0" stroke-width="2" opacity="0.5"/>
+  <line x1="256" y1="256" x2="200" y2="312" stroke="#5090A0" stroke-width="2" opacity="0.5"/>
+  <line x1="256" y1="256" x2="312" y2="312" stroke="#5090A0" stroke-width="2" opacity="0.5"/>
+  
+  <!-- Text -->
+  <text x="256" y="430" font-family="system-ui, sans-serif" font-size="48" font-weight="bold" fill="#DCE0E6" text-anchor="middle">Fluxa</text>
+</svg>

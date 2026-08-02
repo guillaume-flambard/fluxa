@@ -1,0 +1,130 @@
+#!/bin/bash
+# Fluxa Launcher - Starts the complete Fluxa system
+# This script launches: daemon, sidecar, and soma in one click
+
+ROOT="/Users/memo/projects/fluxa"
+cd "$ROOT"
+
+# Colors for output
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+
+# Full PATH so the app works when double-clicked from Finder
+export PATH="/Users/memo/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/Users/memo/.local/bin:/Users/memo/Library/pnpm/.bin:/Users/memo/Library/pnpm/.tools/pnpm/10.14.0/node_modules/pnpm/bin:$PATH"
+
+# Ollama local configuration (mode autonome 24/7)
+export FLUXA_OLLAMA_BASE="http://127.0.0.1:11434"
+export FLUXA_OLLAMA_MODEL="qwen2.5:3b"
+export FLUXA_PREFER_OLLAMA_LOCAL="1"
+export FLUXA_IPC_SOCK="$HOME/Library/Application Support/Fluxa/anima.sock"
+
+# PIDs
+DAEMON_PID=""
+SIDECAR_PID=""
+SOMA_PID=""
+
+# Cleanup function
+cleanup() {
+    echo ""
+    echo -e "${YELLOW}Stopping Fluxa...${NC}"
+    if [ -n "$DAEMON_PID" ]; then
+        kill $DAEMON_PID 2>/dev/null
+    fi
+    if [ -n "$SIDECAR_PID" ]; then
+        kill $SIDECAR_PID 2>/dev/null
+    fi
+    if [ -n "$SOMA_PID" ]; then
+        kill $SOMA_PID 2>/dev/null
+    fi
+    echo -e "${GREEN}✓ Fluxa stopped${NC}"
+    exit 0
+}
+
+# Trap signals for cleanup
+trap cleanup SIGINT SIGTERM EXIT
+
+echo -e "${BLUE}Fluxa - Symbiotic Living Organism${NC}"
+echo -e "${BLUE}====================================${NC}"
+echo ""
+
+# Check if processes are already running
+EXISTING_DAEMON=$(pgrep -f "anima-runtime.*daemon")
+EXISTING_SIDECAR=$(pgrep -f "cognition-sidecar")
+EXISTING_SOMA=$(pgrep -f "fluxa-soma")
+
+if [ -n "$EXISTING_DAEMON" ] || [ -n "$EXISTING_SIDECAR" ] || [ -n "$EXISTING_SOMA" ]; then
+    echo -e "${YELLOW}Fluxa is already running!${NC}"
+    echo "Daemon: ${EXISTING_DAEMON:-not running}"
+    echo "Sidecar: ${EXISTING_SIDECAR:-not running}"
+    echo "Soma: ${EXISTING_SOMA:-not running}"
+    echo ""
+    echo "Opening existing soma window..."
+    # Bring soma window to front if it exists
+    if [ -n "$EXISTING_SOMA" ]; then
+        osascript -e 'tell application "System Events" to set frontmost of process "fluxa-soma" to true' 2>/dev/null
+    fi
+    exit 0
+fi
+
+echo -e "${GREEN}Starting Fluxa system...${NC}"
+echo ""
+
+# Kill any existing socket
+rm -f ~/Library/Application\ Support/Fluxa/anima.sock
+
+# Start the cognition sidecar (background)
+echo -e "${BLUE}[1/3]${NC} Starting cognition sidecar..."
+cd /Users/memo/projects/fluxa
+pnpm --filter @fluxa/cognition-sidecar start > /tmp/fluxa-sidecar.log 2>&1 &
+SIDECAR_PID=$!
+echo "Sidecar PID: $SIDECAR_PID"
+
+# Wait for sidecar to be ready
+sleep 3
+
+# Start the daemon (background)
+echo -e "${BLUE}[2/3]${NC} Starting anima daemon..."
+pnpm fluxa:daemon > /tmp/fluxa-daemon.log 2>&1 &
+DAEMON_PID=$!
+echo "Daemon PID: $DAEMON_PID"
+
+# Wait for daemon to be ready
+sleep 5
+
+# Start the soma (foreground - this keeps the app alive)
+echo -e "${BLUE}[3/3]${NC} Starting soma (native window)..."
+SOMA_BIN="/Users/memo/projects/fluxa/target/debug/fluxa-soma"
+if [ -x "$SOMA_BIN" ]; then
+    "$SOMA_BIN" &
+else
+    cargo run -p fluxa-soma &
+fi
+SOMA_PID=$!
+echo "Soma PID: $SOMA_PID"
+
+echo ""
+echo -e "${GREEN}✓ Fluxa system started!${NC}"
+echo ""
+echo "Process IDs:"
+echo "  Daemon: $DAEMON_PID"
+echo "  Sidecar: $SIDECAR_PID"
+echo "  Soma: $SOMA_PID"
+echo ""
+echo "Configuration:"
+echo "  LLM: Ollama qwen2.5:3b @ $FLUXA_OLLAMA_BASE"
+echo "  Mode: Autonome 24/7"
+echo ""
+echo "Logs:"
+echo "  Daemon: /tmp/fluxa-daemon.log"
+echo "  Sidecar: /tmp/fluxa-sidecar.log"
+echo ""
+
+# Keep script running while soma is alive
+while kill -0 $SOMA_PID 2>/dev/null; do
+    sleep 1
+done
+
+# If soma died, the trap will handle cleanup

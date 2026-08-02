@@ -633,7 +633,7 @@ export class ConversationMemory {
           this.data.motifs.push({
             phrase,
             count: 1,
-            replyStub: this.inventStub(phrase),
+            replyStub: "", // Empty initially; filled by actual responses via feedback loop
             lastSeen: now,
             successRate: 0.5, // Start neutral
             avgResponseLength: 0,
@@ -748,10 +748,8 @@ export class ConversationMemory {
     return next?.role === "assistant" ? next : null;
   }
 
-  private inventStub(_phrase: string): string {
-    // Motifs track recurrence only; speech comes from LLM or learned replies.
-    return "";
-  }
+  // Removed: inventStub was unused stub generation
+  // Motifs now use replyStub from actual LLM responses via feedback loop
 
   /** Drop sticky question-word motifs and empty/hardcoded stubs from older saves. */
   pruneWeakMotifs(): void {

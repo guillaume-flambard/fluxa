@@ -375,6 +375,4 @@ export function speakFromMemory(
   }
 
   return null;
-
-  return null;
 }

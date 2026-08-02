@@ -36,42 +36,32 @@ const LIVING_STATE = join(VAULT_FLUXA, "Living-State.md");
 const BEAT_MS = Number(process.env.FLUXA_BEAT_MS ?? 45_000);
 
 function loadLlm(): LlmCortexConfig | null {
-  const apiKey =
-    process.env.ANIMA_LLM_API_KEY ||
-    process.env.VITE_ANIMA_LLM_API_KEY ||
-    process.env.OPENROUTER_API_KEY ||
-    "";
   const ollamaBase = process.env.FLUXA_OLLAMA_BASE?.trim();
   const ollamaModel = process.env.FLUXA_OLLAMA_MODEL?.trim();
   const preferLocal = process.env.FLUXA_PREFER_OLLAMA_LOCAL === "1";
 
-  if (ollamaBase || preferLocal) {
+  // Par défaut, préférer Ollama local (mode autonome 24/7)
+  if (ollamaBase || preferLocal || !process.env.OPENROUTER_API_KEY) {
+    let base = (ollamaBase || "http://127.0.0.1:11434").trim();
+    base = base.replace(/\/+$/, "");
+    // Ollama expose l'API OpenAI-compatible sous /v1
+    if (!/\/v1$/.test(base)) base = `${base}/v1`;
     return {
-      apiKey,
-      baseUrl: ollamaBase || "http://127.0.0.1:11434",
-      model:
-        ollamaModel ||
-        process.env.ANIMA_LLM_MODEL ||
-        process.env.VITE_ANIMA_LLM_MODEL ||
-        "llama3.2:3b",
-      timeoutMs: 18_000,
+      apiKey: "", // Pas besoin pour Ollama local
+      baseUrl: base,
+      model: ollamaModel || "qwen2.5:3b", // Modèle léger optimal pour M4 16GB
+      timeoutMs: 90_000, // LLM local (M4): generation riche > 18s
     };
   }
 
-  const remoteBaseUrl =
-    process.env.ANIMA_LLM_BASE_URL ||
-    process.env.VITE_ANIMA_LLM_BASE_URL ||
-    (process.env.OPENROUTER_API_KEY
-      ? "https://openrouter.ai/api/v1"
-      : "https://api.openai.com/v1");
+  // Fallback vers OpenRouter si configuré explicitement
+  const apiKey = process.env.OPENROUTER_API_KEY || "";
+  if (!apiKey) return null;
 
   return {
     apiKey,
-    baseUrl: remoteBaseUrl,
-    model:
-      process.env.ANIMA_LLM_MODEL ||
-      process.env.VITE_ANIMA_LLM_MODEL ||
-      (process.env.OPENROUTER_API_KEY ? "deepseek/deepseek-chat" : "gpt-4o-mini"),
+    baseUrl: "https://openrouter.ai/api/v1",
+    model: "deepseek/deepseek-chat",
     timeoutMs: 18_000,
   };
 }
