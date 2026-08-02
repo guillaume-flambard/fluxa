@@ -5,10 +5,23 @@ export {
   tokenize,
   detectIntent,
   heuristicVisceral,
+  tokenUv,
   type ConversationMemoryData,
   type DialogueTurn,
   type LearningStats,
   type RespondContext,
   type DialogueIntent,
+  type DialogueWill,
+  type LocalDialogueEngineOptions,
   type StorageLike,
+  type AnimaSelfhood,
+  type MemoryEpisode,
+  type OpenThread,
 } from "./LocalDialogueEngine.js";
+export {
+  speakWithLlm,
+  speakFromMemory,
+  type SpeakContext,
+  type SpeakMotif,
+  type SpeakResult,
+} from "./speak.js";

@@ -1,0 +1,24 @@
+{
+  "name": "@fluxa/anima-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Headless sovereign daemon — existence pulse, no forced acts (palier 2.0)",
+  "bin": {
+    "fluxa-daemon": "./dist/daemon.js"
+  },
+  "scripts": {
+    "start": "tsx src/daemon.ts",
+    "build": "tsup src/daemon.ts --format esm --clean",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fluxa/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "tsx": "^4.19.4",
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.3"
+  }
+}

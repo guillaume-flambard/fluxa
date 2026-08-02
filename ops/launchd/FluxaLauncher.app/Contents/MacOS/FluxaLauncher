@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="/Users/memo/projects/fluxa"
+cd "$ROOT"
+export FLUXA_COGNITION_URL="${FLUXA_COGNITION_URL:-http://127.0.0.1:8787}"
+export FLUXA_OLLAMA_BASE="${FLUXA_OLLAMA_BASE:-http://127.0.0.1:11434}"
+export FLUXA_PREFER_OLLAMA_LOCAL="${FLUXA_PREFER_OLLAMA_LOCAL:-1}"
+export FLUXA_IPC_SOCK="${FLUXA_IPC_SOCK:-$HOME/Library/Application Support/Fluxa/anima.sock}"
+export PATH="/Users/memo/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/Users/memo/.local/bin:/Users/memo/Library/pnpm/.bin:/Users/memo/Library/pnpm/.tools/pnpm/10.14.0/node_modules/pnpm/bin:$PATH"
+
+if ! launchctl print gui/$(id -u)/com.memo.fluxa.daemon >/dev/null 2>&1; then
+  launchctl bootstrap "gui/$(id -u)" "$ROOT/ops/launchd/com.memo.fluxa.daemon.plist" 2>/dev/null || true
+fi
+launchctl enable "gui/$(id -u)/com.memo.fluxa.daemon" 2>/dev/null || true
+launchctl kickstart -k "gui/$(id -u)/com.memo.fluxa.daemon" 2>/dev/null || true
+
+if [ -x "$ROOT/target/debug/fluxa-soma" ]; then
+  exec "$ROOT/target/debug/fluxa-soma"
+fi
+if command -v cargo >/dev/null 2>&1; then
+  exec cargo run -p fluxa-soma
+fi
+if command -v pnpm >/dev/null 2>&1; then
+  exec pnpm fluxa:soma
+fi
+
+echo "No cargo or pnpm found. Install Rust or pnpm, then retry."
+exit 1

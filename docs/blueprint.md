@@ -21,6 +21,7 @@ agissent comme des forces physiques ("ricochets") générant des ondes de propag
 - Core Render Engine: Raw WebGL 2.0 (no Three.js / WebGPU in v1)
 - Physics: wave equation 100% in fragment shaders (no WASM in v1)
 - Events: JS RippleManager → GPU impulse uploads
+- Meta-AEL: cortex AST → compiler bytecode → soma (see docs/organic-pipeline.md)
 - React: thin @fluxa/react (DOM/A11y + bbox); playground = Vite
 - Out of scope v1: Next.js, Three.js, WebGPU, WASM, Storybook (later)
 

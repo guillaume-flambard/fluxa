@@ -28,6 +28,15 @@ import {
   type ChannelActivityOptions,
   type ChannelSnapshot,
 } from "../channels/ChannelActivityTracker.js";
+import {
+  executeCompiled,
+  executeExpression as runExpression,
+  MAX_ORGANITES,
+  type AnimaExpression,
+  type ExpressionExpander,
+  type OrganiteSlot,
+} from "../expression/index.js";
+import type { AelProgram } from "../expression/compiler/opcodes.js";
 
 export interface FluxaEngineOptions {
   resolution?: number;
@@ -71,6 +80,15 @@ export interface FluxaEngine {
   forceSilence: () => void;
   setInkPainting: (painting: boolean) => void;
   pushInk: (x: number, y: number) => void;
+  spawnOrganite: (slot: OrganiteSlot) => void;
+  beginPanelSpawn: () => void;
+  endPanelSpawn: () => void;
+  nudgeOrganiteAt: (x: number, y: number, radius?: number) => boolean;
+  decayPanelOrganites: (amount?: number) => void;
+  executeExpression: (
+    expression: AnimaExpression,
+    dialect?: ExpressionExpander | null,
+  ) => string | undefined;
   reportCodeHealth: (opts: { hasErrors: boolean }) => void;
   forceIdleForTesting: () => void;
   dispose: () => void;
@@ -165,6 +183,13 @@ export class HeightmapSimulator {
   private inkPts: { x: number; y: number }[] = [];
   private inkStrength = 0;
   private lastInkUv = { x: -1, y: -1 };
+  private organites: OrganiteSlot[] = [];
+  /** When true, newly spawned organites are living-panel cells. */
+  private panelSpawn = false;
+  /** Preallocated soma upload buffers (8 slots). */
+  private readonly inkBuf = new Float32Array(8 * 2);
+  private readonly organiteBuf = new Float32Array(8 * 4);
+  private readonly organiteMeta = new Float32Array(8 * 2);
 
   constructor(canvas: HTMLCanvasElement, options: FluxaEngineOptions = {}) {
     this.ctx = createGL(canvas);
@@ -235,6 +260,23 @@ export class HeightmapSimulator {
       "u_ink5",
       "u_ink6",
       "u_ink7",
+      "u_orgCount",
+      "u_org0",
+      "u_org1",
+      "u_org2",
+      "u_org3",
+      "u_org4",
+      "u_org5",
+      "u_org6",
+      "u_org7",
+      "u_orgMeta0",
+      "u_orgMeta1",
+      "u_orgMeta2",
+      "u_orgMeta3",
+      "u_orgMeta4",
+      "u_orgMeta5",
+      "u_orgMeta6",
+      "u_orgMeta7",
     ]);
   }
 
@@ -316,6 +358,56 @@ export class HeightmapSimulator {
     this.lifecycle.recordHumanActivity(0.4);
     this.channels.recordVisual(0.4);
     this.channels.recordProximics(0.2);
+    this.nudgeOrganiteAt(this.pointerUv.x, this.pointerUv.y);
+    this.wake();
+  }
+
+  beginPanelSpawn(): void {
+    this.panelSpawn = true;
+  }
+
+  endPanelSpawn(): void {
+    this.panelSpawn = false;
+  }
+
+  /**
+   * Gelatinous hit: nearest organite gets life/hue nudge.
+   */
+  nudgeOrganiteAt(x: number, y: number, radius = 0.08): boolean {
+    let best: OrganiteSlot | null = null;
+    let bestD = radius * radius;
+    for (const o of this.organites) {
+      const dx = o.x - x;
+      const dy = o.y - y;
+      const d = dx * dx + dy * dy;
+      if (d <= bestD) {
+        bestD = d;
+        best = o;
+      }
+    }
+    if (!best) return false;
+    best.life = Math.min(1, best.life + 0.12);
+    best.hue = Math.min(1, Math.max(0, best.hue + (Math.random() - 0.5) * 0.08));
+    best.radius = Math.min(0.06, best.radius + 0.004);
+    this.enqueueRipple(best.x, best.y, -0.12, 0.025);
+    this.channels.recordVisual(0.2);
+    this.wake();
+    return true;
+  }
+
+  /** Metabolize living-panel cells under dream or high stress. */
+  decayPanelOrganites(amount = 0.04): void {
+    const stress = Math.max(this.meta.stress, this.life.stress);
+    const dream = this.life.mode === "dream";
+    if (!dream && stress < 0.65) return;
+    const rate = dream ? amount * 1.4 : amount * (0.6 + stress);
+    for (const o of this.organites) {
+      if (!o.panel) continue;
+      o.life = Math.max(0, o.life - rate);
+      o.hue = Math.max(0, o.hue - rate * 0.15);
+    }
+    this.organites = this.organites.filter((o) => o.life > 0.02);
+    this.wake();
   }
 
   recordHumanActivity(velocity = 0.35): void {
@@ -354,6 +446,94 @@ export class HeightmapSimulator {
     this.channels.recordProximics(0.12);
     this.lifecycle.recordHumanActivity(0.2);
     this.wake();
+  }
+
+  enqueueRipple(
+    x: number,
+    y: number,
+    amplitude: number,
+    sigma: number,
+  ): void {
+    this.ripples.enqueue({ x, y, amplitude, sigma });
+    this.wake();
+  }
+
+  spawnOrganite(slot: OrganiteSlot): void {
+    const next: OrganiteSlot = {
+      x: slot.x,
+      y: slot.y,
+      kind: slot.kind,
+      life: Math.min(1, Math.max(0.05, slot.life)),
+      hue: Math.min(1, Math.max(0, slot.hue)),
+      radius: Math.max(0.012, slot.radius),
+    };
+    if (slot.panel || this.panelSpawn) next.panel = true;
+    this.organites.unshift(next);
+    if (this.organites.length > MAX_ORGANITES) {
+      this.organites.length = MAX_ORGANITES;
+    }
+    this.channels.recordVisual(0.25);
+    this.wake();
+  }
+
+  applyField(partial: {
+    warp?: number;
+    stress?: number;
+    energy?: number;
+    affinity?: number;
+  }): void {
+    const wire: Partial<VisceralState> = {};
+    const life: { stress?: number; energy?: number; affinity?: number } = {};
+    if (partial.stress != null) {
+      wire.stress_level = partial.stress;
+      life.stress = partial.stress;
+    }
+    if (partial.energy != null) {
+      wire.energy_level = partial.energy;
+      life.energy = partial.energy;
+    }
+    if (partial.affinity != null) {
+      wire.affinity_level = partial.affinity;
+      life.affinity = partial.affinity;
+    }
+    if (Object.keys(wire).length > 0) {
+      this.synaptic.applyVisceral(wire);
+      this.lifecycle.applyVisceralIntent(life);
+    }
+    if (partial.warp != null) {
+      this.homeostasis.excite(partial.warp * 0.35);
+      this.lifecycle.recordHumanActivity(0.15 + partial.warp * 0.45);
+      if (partial.warp > 0.65) {
+        this.lifecycle.enterDream();
+      }
+    }
+    this.wake();
+  }
+
+  /** Apply Anima Expression Language ops to the living body (bytecode path). */
+  executeExpression(
+    expression: AnimaExpression,
+    dialect?: ExpressionExpander | null,
+  ): string | undefined {
+    // Hot path: single invoke with cached macro bytecode (no UV bias).
+    const only = expression.ops.length === 1 ? expression.ops[0] : null;
+    if (
+      only?.op === "invoke" &&
+      only.x == null &&
+      only.y == null &&
+      dialect &&
+      "getProgram" in dialect &&
+      typeof (dialect as { getProgram?: (n: string) => AelProgram | undefined })
+        .getProgram === "function"
+    ) {
+      const prog = (
+        dialect as { getProgram: (n: string) => AelProgram | undefined }
+      ).getProgram(only.name);
+      if (prog && prog.instructionCount > 0) {
+        return executeCompiled(this, prog, expression.visceral_state);
+      }
+    }
+    return runExpression(this, expression, dialect);
   }
 
   reportCodeHealth(opts: { hasErrors: boolean }): void {
@@ -506,6 +686,16 @@ export class HeightmapSimulator {
       }
     } else {
       this.inkStrength = Math.min(1, this.inkStrength + dt * 0.15);
+    }
+
+    // Organite life decay (ephemeral creations); panels metabolize faster in dream/stress
+    if (this.organites.length > 0) {
+      for (const o of this.organites) {
+        const base = o.panel ? 0.18 : 0.32;
+        o.life -= dt * base;
+      }
+      this.decayPanelOrganites(dt * 0.55);
+      this.organites = this.organites.filter((o) => o.life > 0.02);
     }
 
     const fatigued = this.meta.fatigued;
@@ -661,6 +851,12 @@ export class HeightmapSimulator {
     gl.uniform1f(pass.uniforms["u_inkStrength"] ?? null, this.inkStrength);
     const nInk = this.inkPts.length;
     gl.uniform1i(pass.uniforms["u_inkCount"] ?? null, nInk);
+    this.inkBuf.fill(0);
+    for (let i = 0; i < nInk && i < 8; i++) {
+      const p = this.inkPts[i]!;
+      this.inkBuf[i * 2] = p.x;
+      this.inkBuf[i * 2 + 1] = p.y;
+    }
     const inkUniforms = [
       "u_ink0",
       "u_ink1",
@@ -672,9 +868,55 @@ export class HeightmapSimulator {
       "u_ink7",
     ];
     for (let i = 0; i < 8; i++) {
-      const p = this.inkPts[i];
-      const name = inkUniforms[i]!;
-      gl.uniform2f(pass.uniforms[name] ?? null, p?.x ?? 0, p?.y ?? 0);
+      gl.uniform2fv(
+        pass.uniforms[inkUniforms[i]!] ?? null,
+        this.inkBuf.subarray(i * 2, i * 2 + 2),
+      );
+    }
+
+    const nOrg = this.organites.length;
+    gl.uniform1i(pass.uniforms["u_orgCount"] ?? null, nOrg);
+    this.organiteBuf.fill(0);
+    this.organiteMeta.fill(0);
+    for (let i = 0; i < nOrg && i < 8; i++) {
+      const o = this.organites[i]!;
+      const b = i * 4;
+      this.organiteBuf[b] = o.x;
+      this.organiteBuf[b + 1] = o.y;
+      this.organiteBuf[b + 2] = o.life;
+      this.organiteBuf[b + 3] = o.radius;
+      this.organiteMeta[i * 2] = o.kind;
+      this.organiteMeta[i * 2 + 1] = o.hue;
+    }
+    const orgUniforms = [
+      "u_org0",
+      "u_org1",
+      "u_org2",
+      "u_org3",
+      "u_org4",
+      "u_org5",
+      "u_org6",
+      "u_org7",
+    ];
+    const orgMetaUniforms = [
+      "u_orgMeta0",
+      "u_orgMeta1",
+      "u_orgMeta2",
+      "u_orgMeta3",
+      "u_orgMeta4",
+      "u_orgMeta5",
+      "u_orgMeta6",
+      "u_orgMeta7",
+    ];
+    for (let i = 0; i < 8; i++) {
+      gl.uniform4fv(
+        pass.uniforms[orgUniforms[i]!] ?? null,
+        this.organiteBuf.subarray(i * 4, i * 4 + 4),
+      );
+      gl.uniform2fv(
+        pass.uniforms[orgMetaUniforms[i]!] ?? null,
+        this.organiteMeta.subarray(i * 2, i * 2 + 2),
+      );
     }
 
     gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -750,6 +992,12 @@ export function createEngine(
     forceSilence: () => sim.forceSilence(),
     setInkPainting: (p) => sim.setInkPainting(p),
     pushInk: (x, y) => sim.pushInk(x, y),
+    spawnOrganite: (s) => sim.spawnOrganite(s),
+    beginPanelSpawn: () => sim.beginPanelSpawn(),
+    endPanelSpawn: () => sim.endPanelSpawn(),
+    nudgeOrganiteAt: (x, y, r) => sim.nudgeOrganiteAt(x, y, r),
+    decayPanelOrganites: (a) => sim.decayPanelOrganites(a),
+    executeExpression: (e, d) => sim.executeExpression(e, d),
     reportCodeHealth: (o) => sim.reportCodeHealth(o),
     forceIdleForTesting: () => sim.forceIdleForTesting(),
     dispose: () => sim.dispose(),

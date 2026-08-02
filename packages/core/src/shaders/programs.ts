@@ -121,6 +121,23 @@ uniform vec2 u_ink4;
 uniform vec2 u_ink5;
 uniform vec2 u_ink6;
 uniform vec2 u_ink7;
+uniform int u_orgCount;
+uniform vec4 u_org0;
+uniform vec4 u_org1;
+uniform vec4 u_org2;
+uniform vec4 u_org3;
+uniform vec4 u_org4;
+uniform vec4 u_org5;
+uniform vec4 u_org6;
+uniform vec4 u_org7;
+uniform vec2 u_orgMeta0;
+uniform vec2 u_orgMeta1;
+uniform vec2 u_orgMeta2;
+uniform vec2 u_orgMeta3;
+uniform vec2 u_orgMeta4;
+uniform vec2 u_orgMeta5;
+uniform vec2 u_orgMeta6;
+uniform vec2 u_orgMeta7;
 
 // Distance to quadratic Bezier (approximate via subdivision samples)
 float distToFilament(vec2 p, vec2 a, vec2 b, vec2 c) {
@@ -232,6 +249,40 @@ void main() {
       }
     }
     chorion += inkCol * inkGlow * u_inkStrength * (0.55 + 0.45 * presence);
+  }
+
+  // --- Ephemeral organites (Anima Expression Language forms) ---
+  if (u_orgCount > 0) {
+    vec4 orgs[8];
+    vec2 metas[8];
+    orgs[0] = u_org0; orgs[1] = u_org1; orgs[2] = u_org2; orgs[3] = u_org3;
+    orgs[4] = u_org4; orgs[5] = u_org5; orgs[6] = u_org6; orgs[7] = u_org7;
+    metas[0] = u_orgMeta0; metas[1] = u_orgMeta1; metas[2] = u_orgMeta2; metas[3] = u_orgMeta3;
+    metas[4] = u_orgMeta4; metas[5] = u_orgMeta5; metas[6] = u_orgMeta6; metas[7] = u_orgMeta7;
+    for (int i = 0; i < 8; i++) {
+      if (i >= u_orgCount) break;
+      vec4 o = orgs[i];
+      vec2 meta = metas[i];
+      float life = clamp(o.z, 0.0, 1.0);
+      float rad = max(o.w, 0.01) * (0.55 + 0.45 * life);
+      float kind = meta.x;
+      float hue = clamp(meta.y, 0.0, 1.0);
+      vec2 p = v_uv - o.xy;
+      float d;
+      if (kind < 0.5) {
+        d = length(p);
+      } else if (kind < 1.5) {
+        d = length(vec2(p.x * 0.4, p.y * 1.7));
+      } else {
+        vec2 q = abs(p);
+        d = (q.x + q.y) * 0.72;
+      }
+      float glow = exp(-d * d / max(rad * rad, 1e-6)) * life;
+      vec3 orgCol = mix(cyan, violet, hue);
+      orgCol = mix(orgCol, amber, clamp(u_energy * 0.55, 0.0, 1.0));
+      orgCol = mix(orgCol, darkRed, smoothstep(0.55, 1.0, u_stress) * 0.5);
+      chorion += orgCol * glow * (0.5 + 0.5 * presence);
+    }
   }
 
   fragColor = vec4(chorion, 1.0);

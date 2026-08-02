@@ -1,0 +1,48 @@
+export {
+  executeExpression,
+  executeCompiled,
+  kindToIndex,
+  MAX_ORGANITES,
+  type AnimaOp,
+  type AnimaExpression,
+  type OrganiteKind,
+  type OrganiteSlot,
+  type ExpressionHost,
+  type ExpressionExpander,
+} from "./types.js";
+export {
+  DialectStore,
+  DIALECT_STORAGE_KEY,
+  MAX_MACRO_BODY,
+  MAX_EXPAND_DEPTH,
+  MAX_MACROS,
+  MACRO_NAME_RE,
+  expandOps,
+  validateMacro,
+  validateMacroBody,
+  isValidMacroName,
+  seedMacros,
+  type AnimaMacro,
+  type DialectData,
+  type MacroOrigin,
+  type StorageLike as DialectStorageLike,
+} from "./dialect.js";
+export {
+  CortexService,
+  shouldInvent,
+  inventLocalMacro,
+  inventLlmMacro,
+  type CortexInventContext,
+  type CortexServiceOptions,
+  type LlmCortexConfig,
+} from "./cortex.js";
+export {
+  compileExpression,
+  compileMacro,
+  encodeExpandedOps,
+  decodeProgram,
+  executeProgram,
+  AEL_MAGIC,
+  AEL_INSTR_SIZE,
+  type AelProgram,
+} from "./compiler/index.js";

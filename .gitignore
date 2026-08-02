@@ -6,3 +6,7 @@ dist
 .turbo
 .vite
 coverage
+.env
+.env.*
+!.env.example
+target/

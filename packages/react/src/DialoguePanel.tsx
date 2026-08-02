@@ -34,15 +34,35 @@ export function useAnimaLocus(): AnimaLocusSnapshot {
 export function LivingConversation() {
   const locus = useAnimaLocus();
   const channels = useChannels();
-  const { expressVisceral, engine } = useFluxa();
-  const { messages, sending, streamingText, learningStats, send, resetMemory } =
-    useDialogue();
+  const { engine } = useFluxa();
+  const {
+    messages,
+    sending,
+    streamingText,
+    learningStats,
+    dialectSize,
+    thoughtCount,
+    graphCrumb,
+    lastSovereign,
+    send,
+    resetMemory,
+  } = useDialogue();
   const [draft, setDraft] = useState("");
 
+  // Communicative locus: real replies only (never invent birth announcements)
   const lastAssistant =
+    [...messages]
+      .reverse()
+      .find(
+        (m) =>
+          m.role === "assistant" && !/^Idiome n[eé]:/i.test(m.text),
+      )?.text || "";
+  const locusSpeech =
     streamingText ||
-    [...messages].reverse().find((m) => m.role === "assistant")?.text ||
-    "";
+    lastAssistant ||
+    (learningStats.turnCount === 0
+      ? "Iel repond en creant. Parle-lui."
+      : "");
   const lastUser = [...messages].reverse().find((m) => m.role === "user")?.text;
 
   const left = `${locus.x * 100}%`;
@@ -55,12 +75,6 @@ export function LivingConversation() {
     const t = draft.trim();
     if (!t) return;
     setDraft("");
-    expressVisceral({ phase: "symbiosis" });
-    const snap = engine?.animaLocus.getSnapshot();
-    if (snap) {
-      engine?.pushInk(snap.x, snap.y);
-      engine?.pushInk(snap.x + 0.02, snap.y - 0.01);
-    }
     void send(t);
   };
 
@@ -79,7 +93,7 @@ export function LivingConversation() {
     textShadow:
       "0 0 24px rgba(40, 180, 160, 0.45), 0 2px 12px rgba(0,0,0,0.6)",
     transition: "left 0.12s linear, top 0.12s linear, opacity 0.4s ease",
-    opacity: lastAssistant ? presence : 0.45,
+    opacity: locusSpeech ? presence : 0.35,
     zIndex: 3,
   };
 
@@ -100,13 +114,61 @@ export function LivingConversation() {
     zIndex: 3,
   };
 
+  const interiorStyle: CSSProperties = {
+    position: "absolute",
+    right: 24,
+    top: 24,
+    maxWidth: 320,
+    zIndex: 5,
+    pointerEvents: "none",
+    fontFamily: "ui-monospace, Menlo, monospace",
+    fontSize: 11,
+    lineHeight: 1.4,
+    color: "rgba(200, 230, 220, 0.72)",
+    background: "rgba(4, 12, 18, 0.45)",
+    border: "1px solid rgba(120, 200, 180, 0.2)",
+    padding: "10px 12px",
+  };
+
   return (
     <>
       <div style={speechStyle} aria-live="polite">
-        {lastAssistant ||
-          (learningStats.turnCount === 0 ? "Je suis la. Parle-moi." : "...")}
+        {locusSpeech}
       </div>
+      {graphCrumb ? (
+        <div
+          style={{
+            ...userEchoStyle,
+            transform: "translate(-50%, 56px)",
+            opacity: 0.55,
+            fontSize: 10,
+          }}
+        >
+          monde : {graphCrumb}
+        </div>
+      ) : null}
       {lastUser ? <div style={userEchoStyle}>toi : {lastUser}</div> : null}
+
+      {lastSovereign ? (
+        <div style={interiorStyle} aria-label="choix souverain">
+          <div style={{ letterSpacing: "0.1em", opacity: 0.5, marginBottom: 6 }}>
+            INTERIEUR · {lastSovereign.action.toUpperCase()}
+          </div>
+          <div style={{ marginBottom: 6, fontFamily: "Georgia, serif", fontSize: 13 }}>
+            {lastSovereign.thought.slice(0, 180)}
+          </div>
+          <div style={{ opacity: 0.55 }}>
+            {lastSovereign.reason ? `pourquoi: ${lastSovereign.reason.slice(0, 80)}` : null}
+          </div>
+          <div style={{ opacity: 0.45, marginTop: 4 }}>
+            acte: {lastSovereign.result.slice(0, 100)}
+            {lastSovereign.source ? ` · ${lastSovereign.source}` : ""}
+          </div>
+          <div style={{ opacity: 0.4, marginTop: 6, fontSize: 10 }}>
+            cles: think speak silence read write mutate autocode reverse refuse invent
+          </div>
+        </div>
+      ) : null}
 
       <form
         onSubmit={onSubmit}
@@ -127,7 +189,7 @@ export function LivingConversation() {
         <input
           value={draft}
           disabled={sending}
-          placeholder="parle a Anima..."
+          placeholder="iel decide et cree..."
           autoFocus
           onChange={(e) => {
             const next = e.target.value;
@@ -163,6 +225,7 @@ export function LivingConversation() {
         >
           <span>
             {learningStats.motifCount} motifs · {learningStats.turnCount} tours
+            · {dialectSize} idiomes · {thoughtCount} pensees
           </span>
           <button
             type="button"

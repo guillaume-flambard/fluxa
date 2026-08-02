@@ -1,0 +1,17 @@
+{
+  "name": "@fluxa/cognition-sidecar",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Localhost Obsidian sync for Fluxa cognitive world",
+  "scripts": {
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "test:paths": "tsx src/paths.selftest.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
+}

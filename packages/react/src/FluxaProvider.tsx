@@ -16,15 +16,24 @@ import {
   deriveAnimaPhase,
   type AnimaPhase,
   type ChannelSnapshot,
+  type CognitiveCore,
+  type CortexService,
+  type DialectStore,
   type FluxaEngine,
   type FluxaEngineOptions,
   type HomeostasisSnapshot,
   type LifecycleSnapshot,
+  type LlmCortexConfig,
   type PerceptionSnapshot,
   type VisceralIntent,
   type VisceralPartial,
   type VisceralState,
 } from "@fluxa/core";
+import {
+  createAnimaWill,
+  readCognitionUrlFromEnv,
+  readLlmConfigFromEnv,
+} from "./animaWill.js";
 
 export interface ComponentBounds {
   id: string;
@@ -36,6 +45,9 @@ export interface ComponentBounds {
 
 export interface FluxaContextValue {
   engine: FluxaEngine | null;
+  dialect: DialectStore | null;
+  cortex: CortexService | null;
+  cognitive: CognitiveCore | null;
   registerComponent: (bounds: ComponentBounds) => void;
   unregisterComponent: (id: string) => void;
   feedVisceralChunk: (chunk: string) => VisceralPartial | null;
@@ -180,6 +192,10 @@ export interface FluxaProviderProps {
   engineOptions?: FluxaEngineOptions;
   canvasStyle?: CSSProperties;
   className?: string;
+  /** OpenAI-compatible cortex. If omitted, reads VITE_ANIMA_LLM_* when present. */
+  llm?: LlmCortexConfig | null;
+  /** Cognition sidecar URL. If omitted, reads VITE_FLUXA_COGNITION_URL. */
+  cognitionUrl?: string | null;
 }
 
 export function FluxaProvider({
@@ -187,11 +203,35 @@ export function FluxaProvider({
   engineOptions,
   canvasStyle,
   className,
+  llm,
+  cognitionUrl,
 }: FluxaProviderProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [engine, setEngine] = useState<FluxaEngine | null>(null);
   const componentsRef = useRef<Map<string, ComponentBounds>>(new Map());
+
+  const willRef = useRef<ReturnType<typeof createAnimaWill> | null>(null);
+  if (!willRef.current) {
+    const env =
+      typeof import.meta !== "undefined"
+        ? (import.meta as { env?: Record<string, string | undefined> }).env
+        : undefined;
+    const resolvedLlm =
+      llm !== undefined ? llm : readLlmConfigFromEnv(env ?? {});
+    const resolvedSide =
+      cognitionUrl !== undefined
+        ? cognitionUrl
+        : readCognitionUrlFromEnv(env ?? {}) ??
+          "http://127.0.0.1:8787";
+    willRef.current = createAnimaWill({
+      llm: resolvedLlm ?? null,
+      sidecarUrl: resolvedSide,
+    });
+  }
+  const dialect = willRef.current.dialect;
+  const cortex = willRef.current.cortex;
+  const cognitive = willRef.current.cognitive;
 
   const registerComponent = useCallback((bounds: ComponentBounds) => {
     componentsRef.current.set(bounds.id, bounds);
@@ -257,8 +297,13 @@ export function FluxaProvider({
     eng.start();
     setEngine(eng);
 
+    let strokeUv = { x: 0.5, y: 0.5 };
+    let strokePainted = false;
+
     const onPointerDown = (e: PointerEvent) => {
       const uv = eng.clientToUv(e.clientX, e.clientY);
+      strokeUv = uv;
+      strokePainted = true;
       eng.setPointerUv(uv.x, uv.y);
       eng.setInkPainting(true);
       eng.pushInk(uv.x, uv.y);
@@ -271,8 +316,10 @@ export function FluxaProvider({
 
     const onPointerMove = (e: PointerEvent) => {
       const uv = eng.clientToUv(e.clientX, e.clientY);
+      strokeUv = uv;
       eng.setPointerUv(uv.x, uv.y);
       if (e.buttons > 0) {
+        strokePainted = true;
         eng.pushInk(uv.x, uv.y);
       }
       eng.ripples.pointerMove(uv.x, uv.y);
@@ -288,6 +335,30 @@ export function FluxaProvider({
     const onPointerUp = () => {
       eng.setInkPainting(false);
       eng.ripples.pointerLeave();
+      // Reply in kind: ephemeral organite at trail end
+      if (strokePainted) {
+        eng.executeExpression({
+          ops: [
+            {
+              op: "organite",
+              kind: "orb",
+              x: strokeUv.x,
+              y: strokeUv.y,
+              life: 0.85,
+              hue: 0.48,
+              radius: 0.038,
+            },
+            {
+              op: "ripple",
+              x: strokeUv.x,
+              y: strokeUv.y,
+              amp: -0.22,
+              sigma: 0.024,
+            },
+          ],
+        });
+      }
+      strokePainted = false;
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
@@ -326,6 +397,9 @@ export function FluxaProvider({
   const value = useMemo<FluxaContextValue>(
     () => ({
       engine,
+      dialect,
+      cortex,
+      cognitive,
       registerComponent,
       unregisterComponent,
       feedVisceralChunk,
@@ -337,6 +411,9 @@ export function FluxaProvider({
     }),
     [
       engine,
+      dialect,
+      cortex,
+      cognitive,
       registerComponent,
       unregisterComponent,
       feedVisceralChunk,

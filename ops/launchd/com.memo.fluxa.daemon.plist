@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.memo.fluxa.daemon</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/memo/projects/fluxa/ops/launchd/run-daemon.sh</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>/Users/memo/projects/fluxa</string>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>/Users/memo/Library/Logs/fluxa.stdout.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/memo/Library/Logs/fluxa.stderr.log</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>FLUXA_COGNITION_URL</key>
+		<string>http://127.0.0.1:8787</string>
+		<key>FLUXA_OLLAMA_BASE</key>
+		<string>http://127.0.0.1:11434</string>
+		<key>FLUXA_PREFER_OLLAMA_LOCAL</key>
+		<string>1</string>
+		<key>PATH</key>
+		<string>/Users/memo/Library/pnpm/.bin:/Users/memo/Library/pnpm/.tools/pnpm/10.14.0/node_modules/pnpm/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+	</dict>
+</dict>
+</plist>

@@ -16,9 +16,14 @@
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --clean",
     "typecheck": "tsc --noEmit",
-    "dev": "tsup src/index.ts --format esm --dts --watch"
+    "dev": "tsup src/index.ts --format esm --dts --watch",
+    "test:compiler": "tsx src/expression/compiler/selftest.ts",
+    "test:will": "tsx src/will/selftest.ts",
+    "test:memory": "tsx src/dialogue/selftest.ts",
+    "test:sovereignty": "tsx src/sovereignty/selftest.ts"
   },
   "devDependencies": {
+    "tsx": "^4.19.0",
     "tsup": "^8.5.0",
     "typescript": "^5.8.3"
   }

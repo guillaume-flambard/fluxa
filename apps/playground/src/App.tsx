@@ -13,7 +13,18 @@ function LivingHud() {
   const meta = useHomeostasis();
   const { phase, lifecycle } = useAnima();
   const channels = useChannels();
-  const { engine, recordLanguageInput, forceSilence } = useFluxa();
+  const { engine, dialect, recordLanguageInput, forceSilence } = useFluxa();
+
+  const invokeSeed = (name: string, asPanel = false) => {
+    if (!engine) return;
+    if (asPanel) engine.beginPanelSpawn();
+    try {
+      engine.executeExpression({ ops: [{ op: "invoke", name }] }, dialect);
+    } finally {
+      if (asPanel) engine.endPanelSpawn();
+    }
+    engine.wake();
+  };
 
   return (
     <div
@@ -28,7 +39,7 @@ function LivingHud() {
         background: "rgba(4, 12, 24, 0.55)",
         border: "1px solid rgba(180, 210, 255, 0.25)",
         padding: "12px 14px",
-        minWidth: 260,
+        minWidth: 280,
       }}
     >
       <div style={{ marginBottom: 6, letterSpacing: "0.12em", opacity: 0.6 }}>
@@ -41,9 +52,61 @@ function LivingHud() {
       <Meter label="energy" value={Math.min(1, Math.max(0, Math.max(meta.energy, lifecycle.energy)))} />
       <Meter label="Ia" value={lifecycle.autonomyIndex} />
       <div style={{ marginTop: 8, opacity: 0.55, fontSize: 11 }}>
-        channel {channels.active} · type anywhere for language
+        volonte · soma bytecode · clic = nudge organite
       </div>
-      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+        <button
+          type="button"
+          style={btnStyle}
+          onClick={() => {
+            engine?.homeostasis.excite(0.9);
+            engine?.applyVisceral({
+              stress_level: 0.88,
+              energy_level: 0.35,
+              affinity_level: 0.3,
+            });
+            invokeSeed("anxiety_pulse");
+          }}
+          title="Force refuse soma (surcharge)"
+        >
+          will:refuse
+        </button>
+        <button
+          type="button"
+          style={btnStyle}
+          onClick={() => {
+            engine?.applyVisceral({
+              stress_level: 0.2,
+              energy_level: 0.75,
+              affinity_level: 0.78,
+            });
+            invokeSeed("living_panel", true);
+          }}
+          title="Force living_panel organites"
+        >
+          will:panel
+        </button>
+        <button
+          type="button"
+          style={btnStyle}
+          onClick={() => invokeSeed("soft_bloom")}
+        >
+          soft_bloom
+        </button>
+        <button
+          type="button"
+          style={btnStyle}
+          onClick={() => invokeSeed("anxiety_pulse")}
+        >
+          anxiety_pulse
+        </button>
+        <button
+          type="button"
+          style={btnStyle}
+          onClick={() => invokeSeed("shard_storm")}
+        >
+          shard_storm
+        </button>
         <button
           type="button"
           style={btnStyle}
@@ -143,11 +206,11 @@ export function App() {
           Fluxa / Living link
         </p>
         <h1 style={{ margin: "8px 0 0", fontWeight: 500, fontSize: 28 }}>
-          Parle a Anima.
+          Elle repond en creant.
         </h1>
         <p style={{ margin: "10px 0 0", opacity: 0.7, lineHeight: 1.45 }}>
-          L&apos;entite au centre te repond. Tes mots naissent sous elle ; les
-          siens au-dessus. Drag pour peindre. Silence attenue la presence.
+          Anima pense, invente des idiomes Meta-AEL, et sync son monde mental
+          vers Obsidian si le sidecar tourne. Les mots au locus sont rares.
         </p>
       </div>
 
