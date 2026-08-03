@@ -23,6 +23,8 @@ import {
 } from "./paths.js";
 
 const PORT = Number(process.env.FLUXA_COGNITION_PORT ?? 8787);
+const OLLAMA_BASE = (process.env.FLUXA_OLLAMA_BASE || "http://127.0.0.1:11434").replace(/\/$/, "");
+const EMBED_MODEL = process.env.FLUXA_EMBED_MODEL || "nomic-embed-text";
 const JOURNAL = join(FLUXA_DIR, "Anima-Journal.md");
 const MONDE = join(FLUXA_DIR, "Monde-Mental");
 const AGENDA = join(FLUXA_DIR, "Agenda.md");
@@ -49,24 +51,78 @@ function slugSignature(slug: string): string {
   return words.slice(0, 2).join("-");
 }
 
+/** Embed text via local Ollama; returns null when unavailable. */
+async function embedText(text: string): Promise<number[] | null> {
+  const t = text.trim();
+  if (!t) return null;
+  try {
+    const res = await fetch(`${OLLAMA_BASE}/api/embeddings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: EMBED_MODEL, prompt: t.slice(0, 4000) }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { embedding?: number[] };
+    return Array.isArray(data.embedding) && data.embedding.length ? data.embedding : null;
+  } catch {
+    return null;
+  }
+}
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (!a.length || a.length !== b.length) return 0;
+  let dot = 0;
+  let na = 0;
+  let nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i]! * b[i]!;
+    na += a[i]! * a[i]!;
+    nb += b[i]! * b[i]!;
+  }
+  if (na === 0 || nb === 0) return 0;
+  return dot / (Math.sqrt(na) * Math.sqrt(nb));
+}
+
 /**
- * Find an existing Monde-Mental note whose slug shares the same dominant words.
+ * Find an existing Monde-Mental note that is a near-duplicate of the new concept.
+ * Prefers semantic (embedding) similarity, falls back to slug signature.
  * Returns the note path to merge into, or null to create a fresh note.
  */
-async function findNearNote(slug: string): Promise<string | null> {
+async function findNearNote(slug: string, concept?: string): Promise<string | null> {
   const sig = slugSignature(slug);
-  if (!sig) return null;
   let files: string[] = [];
   try {
     files = (await readdir(MONDE)).filter((f) => f.endsWith(".md"));
   } catch {
     return null;
   }
+
+  // Slug-signature first (cheap, deterministic).
   for (const f of files) {
     if (slugSignature(f.replace(/\.md$/, "")) === sig) {
       return join(MONDE, f);
     }
   }
+
+  // Semantic pass: if embedding works, merge near-identical concepts.
+  if (concept) {
+    const qv = await embedText(concept);
+    if (qv) {
+      let best: { path: string; score: number } | null = null;
+      for (const f of files) {
+        const title = f.replace(/\.md$/, "").replace(/-/g, " ");
+        const fv = await embedText(title);
+        if (!fv) continue;
+        const score = cosineSimilarity(qv, fv);
+        if (score > 0.82 && (!best || score > best.score)) {
+          best = { path: join(MONDE, f), score };
+        }
+      }
+      if (best) return best.path;
+    }
+  }
+
   return null;
 }
 
@@ -201,7 +257,7 @@ async function handleReflect(body: string): Promise<{ ok: boolean; path?: string
 
   const fileSlug = slugify(thought.concept);
   // Dedup: merge into a near-identical note instead of spawning a new file.
-  const near = await findNearNote(fileSlug);
+  const near = await findNearNote(fileSlug, thought.concept);
   const notePath = near ?? join(MONDE, `${fileSlug}.md`);
   const links = (thought.connections ?? ["core_identity"])
     .map((c) => `[[${c}]]`)

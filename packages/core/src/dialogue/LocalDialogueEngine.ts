@@ -952,6 +952,8 @@ export interface RespondContext {
   sovereignForce?: boolean;
   /** Last reply Anima gave; forces a different answer (anti-loop marker). */
   antiLoopHint?: string | null;
+  /** Semantic episodes from the vector store (override token-overlap recall). */
+  semanticEpisodes?: MemoryEpisode[] | null;
 }
 
 /** Expression-first will: body mutates; reply is live/memory speech. */
@@ -1108,10 +1110,13 @@ export class LocalDialogueEngine {
         role: t.role,
         text: t.text.slice(0, 200),
       })),
-      episodes: this.memory.recallEpisodes(
-        drafted.tokens.length ? drafted.tokens : tokenize(opts?.impulse ?? ""),
-        2,
-      ),
+      episodes:
+        context.semanticEpisodes?.length
+          ? context.semanticEpisodes.slice(0, 2)
+          : this.memory.recallEpisodes(
+            drafted.tokens.length ? drafted.tokens : tokenize(opts?.impulse ?? ""),
+            2,
+          ),
       self: {
         openThreads: self.openThreads.slice(0, 3).map((t) => t.text),
         bondNotes: self.bondNotes.slice(0, 3),
