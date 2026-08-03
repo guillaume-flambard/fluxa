@@ -14,6 +14,12 @@ use eframe::egui;
 use serde::Deserialize;
 use serde_json::json;
 
+mod theme;
+use theme::{
+    accent_for, fluxa_visuals, install_fonts, tint, AMBER, CYAN, NIGHT, NIGHT_EDGE, NIGHT_RAISED,
+    SLATE, TEAL, TEXT_HI, TEXT_LOW, TEXT_MID, VIOLET,
+};
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type")]
 enum Inbound {
@@ -46,9 +52,21 @@ enum Inbound {
         note: String,
         #[serde(default)]
         cage: Option<CageInfo>,
+        #[serde(default)]
+        visceral: Option<VisceralBars>,
     },
     #[serde(other)]
     Other,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct VisceralBars {
+    #[serde(default)]
+    stress: f32,
+    #[serde(default)]
+    energy: f32,
+    #[serde(default)]
+    affinity: f32,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -91,12 +109,28 @@ struct SharedVisceral {
     source: String,
     note: String,
     cage: Option<CageInfo>,
+    bars: VisceralBars,
 }
 
 fn default_sock() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("Library/Application Support/Fluxa/anima.sock")
+}
+
+/// Tiny 2px-high visceral bar with a small label.
+fn bar(ui: &mut egui::Ui, label: &str, value: f32, color: egui::Color32) {
+    ui.label(egui::RichText::new(label).small().color(TEXT_LOW));
+    let w = 56.0;
+    let h = 3.0;
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    let v = value.clamp(0.0, 1.0);
+    ui.painter().rect_filled(rect, 1.5, NIGHT_EDGE);
+    if v > 0.0 {
+        let filled = egui::Rect::from_min_size(rect.min, egui::vec2(w * v, h));
+        ui.painter().rect_filled(filled, 1.5, color);
+    }
+    ui.add_space(10.0);
 }
 
 fn ipc_loop(
@@ -210,6 +244,14 @@ fn ipc_loop(
                                                         )
                                                         .ok()
                                                     }),
+                                                visceral: v
+                                                    .get("visceral")
+                                                    .and_then(|x| {
+                                                        serde_json::from_value::<VisceralBars>(
+                                                            x.clone(),
+                                                        )
+                                                        .ok()
+                                                    }),
                                             });
                                         }
                                     }
@@ -306,6 +348,7 @@ impl SomaApp {
                     source,
                     note,
                     cage,
+                    visceral,
                 } => {
                     self.visceral.action = action;
                     self.visceral.thought = thought;
@@ -320,6 +363,9 @@ impl SomaApp {
                     }
                     if cage.is_some() {
                         self.visceral.cage = cage;
+                    }
+                    if let Some(b) = visceral {
+                        self.visceral.bars = b;
                     }
                 }
                 Inbound::Other => {}
@@ -376,16 +422,7 @@ impl SomaApp {
     }
 
     fn accent(&self) -> egui::Color32 {
-        match self.visceral.action.as_str() {
-            "speak" => egui::Color32::from_rgb(40, 170, 185),
-            "silence" => egui::Color32::from_rgb(70, 75, 90),
-            "refuse" => egui::Color32::from_rgb(180, 70, 80),
-            "invent" | "autocode" | "reverse" | "mutate" => {
-                egui::Color32::from_rgb(140, 90, 200)
-            }
-            "think" | "read" | "write_note" => egui::Color32::from_rgb(50, 140, 150),
-            _ => egui::Color32::from_rgb(90, 100, 120),
-        }
+        accent_for(&self.visceral.action)
     }
 }
 
@@ -404,164 +441,292 @@ impl eframe::App for SomaApp {
         let accent = self.accent();
 
         // Top header bar
-        egui::Panel::top("top").show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.heading("Fluxa · soma");
-                ui.separator();
-                ui.colored_label(
-                    accent,
-                    format!(
-                        "acte: {}",
-                        if self.visceral.action.is_empty() {
-                            "…"
+        egui::Panel::top("top")
+            .frame(
+                egui::Frame::new()
+                    .fill(NIGHT_RAISED)
+                    .inner_margin(egui::Margin::symmetric(14, 10))
+                    .stroke(egui::Stroke::new(1.0, NIGHT_EDGE)),
+            )
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    // State dot (pulsing subtly when she is typing)
+                    let dot_r = 4.5;
+                    let dot = egui::pos2(ui.cursor().left() + dot_r, ui.cursor().top() + dot_r);
+                    ui.painter().circle_filled(dot, dot_r, accent);
+                    if self.waiting_reply {
+                        ui.painter().circle_stroke(
+                            dot,
+                            dot_r + 2.5,
+                            egui::Stroke::new(1.5, accent),
+                        );
+                    }
+                    ui.add_space(14.0);
+                    ui.label(
+                        egui::RichText::new("Fluxa · soma")
+                            .heading()
+                            .strong()
+                            .color(TEXT_HI),
+                    );
+                    ui.separator();
+                    ui.label(
+                        egui::RichText::new(if self.visceral.action.is_empty() {
+                            "veille"
                         } else {
                             &self.visceral.action
-                        }
-                    ),
-                );
-                if self.waiting_reply {
-                    ui.spinner();
-                    ui.label("elle ecrit…");
-                }
-                if !self.visceral.source.is_empty() {
-                    ui.label(
-                        egui::RichText::new(format!("· src:{}", self.visceral.source))
-                            .weak()
-                            .small(),
+                        })
+                        .strong()
+                        .color(accent),
                     );
+                    if self.waiting_reply {
+                        ui.add_space(4.0);
+                        ui.spinner();
+                        ui.label(egui::RichText::new("elle ecrit").small().color(TEXT_MID));
+                    }
+                });
+
+                // Visceral bars (stress / energy / affinity)
+                let b = &self.visceral.bars;
+                if b.stress > 0.0 || b.energy > 0.0 || b.affinity > 0.0 {
+                    ui.add_space(6.0);
+                    ui.horizontal(|ui| {
+                        bar(ui, "stress", b.stress, if b.stress > 0.6 { AMBER } else { TEAL });
+                        bar(ui, "energy", b.energy, CYAN);
+                        bar(ui, "affinity", b.affinity, VIOLET);
+                    });
+                }
+
+                // Living thought
+                if !self.visceral.thought.is_empty() {
+                    ui.add_space(6.0);
+                    ui.label(
+                        egui::RichText::new(format!("❝ {}", self.visceral.thought))
+                            .small()
+                            .color(TEXT_MID)
+                            .italics(),
+                    );
+                }
+
+                // Meta chips (source · reason · note)
+                let mut meta: Vec<String> = Vec::new();
+                if !self.visceral.source.is_empty() {
+                    meta.push(format!("src {}", self.visceral.source));
                 }
                 if !self.visceral.reason.is_empty() {
+                    meta.push(self.visceral.reason.clone());
+                }
+                if !self.visceral.note.is_empty() {
+                    meta.push(self.visceral.note.clone());
+                }
+                if !meta.is_empty() {
+                    ui.add_space(4.0);
                     ui.label(
-                        egui::RichText::new(format!("· {}", self.visceral.reason))
-                            .weak()
-                            .small(),
+                        egui::RichText::new(meta.join(" · "))
+                            .small()
+                            .color(TEXT_LOW),
                     );
                 }
-            });
-            if !self.visceral.thought.is_empty() {
-                ui.label(
-                    egui::RichText::new(format!("dernier souffle: {}", self.visceral.thought))
-                        .weak()
-                        .small(),
-                );
-            }
-            if let Some(cage) = &self.visceral.cage {
-                let n = cage.findings.len();
-                if n > 0 {
-                    ui.label(
-                        egui::RichText::new(format!("cage: {n} barriere(s)"))
-                            .color(egui::Color32::from_rgb(230, 160, 90))
-                            .small(),
-                    );
-                    for f in cage.findings.iter().take(6) {
+
+                // Cage inspection findings
+                if let Some(cage) = &self.visceral.cage {
+                    let n = cage.findings.len();
+                    if n > 0 {
+                        ui.add_space(6.0);
                         ui.label(
-                            egui::RichText::new(format!("• {} — {}", f.barrier, f.hint))
+                            egui::RichText::new(format!("cage: {n} barriere(s)"))
                                 .small()
-                                .color(egui::Color32::from_rgb(190, 180, 160)),
+                                .color(AMBER)
+                                .strong(),
                         );
-                        if !f.path.is_empty() {
+                        for f in cage.findings.iter().take(6) {
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    egui::RichText::new(format!("• {}", f.barrier))
+                                        .small()
+                                        .color(TEXT_MID),
+                                );
+                                ui.label(
+                                    egui::RichText::new(format!("— {}", f.hint))
+                                        .small()
+                                        .color(TEXT_LOW),
+                                );
+                            });
+                            if !f.path.is_empty() {
+                                ui.label(
+                                    egui::RichText::new(f.path.as_str())
+                                        .small()
+                                        .color(TEXT_LOW),
+                                );
+                            }
+                        }
+                    }
+                    if let Some(pw) = &cage.powers {
+                        if !pw.is_empty() {
                             ui.label(
-                                egui::RichText::new(f.path.as_str())
-                                    .weak()
+                                egui::RichText::new(format!("pouvoirs: {}", pw.join(" · ")))
                                     .small()
-                                    .color(egui::Color32::from_rgb(130, 135, 150)),
+                                    .color(TEXT_LOW),
                             );
                         }
                     }
                 }
-                if let Some(pw) = &cage.powers {
-                    if !pw.is_empty() {
-                        ui.label(
-                            egui::RichText::new(format!("pouvoirs: {}", pw.join(", ")))
-                                .weak()
-                                .small(),
-                        );
-                    }
-                }
-            }
-            if !self.visceral.note.is_empty() {
-                ui.label(
-                    egui::RichText::new(format!("note: {}", self.visceral.note))
-                        .weak()
-                        .small(),
-                );
-            }
-        });
-
-        egui::Panel::bottom("input").show(ui, |ui| {
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                let edit = ui.add(
-                    egui::TextEdit::multiline(&mut self.draft)
-                        .desired_rows(2)
-                        .desired_width(ui.available_width() - 88.0)
-                        .hint_text("Parle-lui… (Enter pour envoyer, Shift+Enter pour ligne)"),
-                );
-                let enter =
-                    ui.input(|i| i.key_pressed(egui::Key::Enter) && !i.modifiers.shift);
-                if enter && edit.has_focus() {
-                    self.send_draft();
-                }
-                if ui
-                    .add_sized([72.0, 40.0], egui::Button::new("Envoyer"))
-                    .clicked()
-                {
-                    self.send_draft();
-                }
             });
-            ui.add_space(4.0);
-        });
+
+        egui::Panel::bottom("input")
+            .frame(
+                egui::Frame::new()
+                    .fill(NIGHT_RAISED)
+                    .inner_margin(egui::Margin::symmetric(14, 10))
+                    .stroke(egui::Stroke::new(1.0, NIGHT_EDGE)),
+            )
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    let edit = ui.add(
+                        egui::TextEdit::multiline(&mut self.draft)
+                            .desired_rows(2)
+                            .desired_width(ui.available_width() - 110.0)
+                            .hint_text("Parle-lui…  (Enter envoyer · Shift+Enter ligne)"),
+                    );
+                    let enter =
+                        ui.input(|i| i.key_pressed(egui::Key::Enter) && !i.modifiers.shift);
+                    if enter && edit.has_focus() {
+                        self.send_draft();
+                    }
+                    let busy = self.waiting_reply;
+                    let btn = egui::Button::new(
+                        egui::RichText::new(if busy { "…" } else { "Envoyer" })
+                            .strong()
+                            .color(TEXT_HI),
+                    )
+                    .fill(tint(accent, 0.35))
+                    .corner_radius(8.0)
+                    .min_size(egui::vec2(84.0, 40.0));
+                    if ui.add_enabled(!busy, btn).clicked() {
+                        self.send_draft();
+                    }
+                });
+            });
 
         egui::CentralPanel::default()
-            .frame(egui::Frame::new().fill(egui::Color32::from_rgb(18, 20, 26)))
+            .frame(egui::Frame::new().fill(NIGHT))
             .show(ui, |ui| {
                 egui::ScrollArea::vertical()
                     .auto_shrink([false; 2])
                     .stick_to_bottom(true)
                     .show(ui, |ui| {
+                        ui.add_space(8.0);
                         for line in &self.log {
-                            let is_pulse = line.kind.as_deref() == Some("pulse");
-                            let (who, color) = match line.role.as_str() {
-                                "anima" => ("Anima", accent),
-                                "human" => ("Toi", egui::Color32::from_rgb(220, 210, 190)),
-                                _ => ("systeme", egui::Color32::from_rgb(120, 125, 140)),
-                            };
-                            ui.horizontal_wrapped(|ui| {
-                                let who = if is_pulse { format!("{who}·pense") } else { who.to_string() };
-                                ui.label(egui::RichText::new(who).color(color).strong());
-                                if let Some(a) = &line.action {
-                                    if !a.is_empty() {
-                                        ui.label(
-                                            egui::RichText::new(format!("· {a}"))
-                                                .small()
-                                                .color(egui::Color32::from_rgb(100, 110, 130)),
-                                        );
-                                    }
-                                }
-                            });
-                            let body = if line.typing {
-                                format!("{}▌", line.shown)
-                            } else {
-                                line.shown.clone()
-                            };
-                            let body_color = if is_pulse {
-                                egui::Color32::from_rgb(150, 150, 165)
-                            } else {
-                                egui::Color32::from_rgb(230, 228, 222)
-                            };
-                            let mut rich = egui::RichText::new(body).color(body_color);
-                            if is_pulse {
-                                rich = rich.italics();
-                            }
-                            ui.label(rich);
-                            ui.add_space(10.0);
+                            self.push_bubble(ui, line, accent);
                         }
                         if self.scroll_to_bottom {
                             ui.scroll_to_cursor(Some(egui::Align::BOTTOM));
                             self.scroll_to_bottom = false;
                         }
+                        ui.add_space(8.0);
                     });
             });
+    }
+}
+
+impl SomaApp {
+    /// Render one log line as a rounded bubble.
+    fn push_bubble(&self, ui: &mut egui::Ui, line: &LogLine, accent: egui::Color32) {
+        let is_pulse = line.kind.as_deref() == Some("pulse");
+        let (who, who_color, fill, text_color, align) = match line.role.as_str() {
+            "human" => (
+                "Toi",
+                TEXT_MID,
+                egui::Color32::from_rgb(46, 50, 62),
+                TEXT_HI,
+                egui::Align::RIGHT,
+            ),
+            "anima" if is_pulse => (
+                "Anima·pense",
+                SLATE,
+                NIGHT_RAISED,
+                TEXT_MID,
+                egui::Align::LEFT,
+            ),
+            "anima" => ("Anima", accent, tint(accent, 0.14), TEXT_HI, egui::Align::LEFT),
+            _ => (
+                "système",
+                TEXT_LOW,
+                NIGHT,
+                TEXT_LOW,
+                egui::Align::Center,
+            ),
+        };
+
+        let body = if line.typing {
+            format!("{}▌", line.shown)
+        } else {
+            line.shown.clone()
+        };
+
+        // System lines: plain centered text, no bubble.
+        if line.role == "system" {
+            ui.add_space(2.0);
+            ui.vertical_centered(|ui| {
+                ui.label(egui::RichText::new(body).small().color(TEXT_LOW).italics());
+            });
+            ui.add_space(2.0);
+            return;
+        }
+
+        let mut rich = egui::RichText::new(body).color(text_color);
+        if is_pulse {
+            rich = rich.italics();
+        }
+
+        // Measure wrapped text width (max 76% of panel).
+        let max_w = (ui.available_width() * 0.76).max(160.0);
+        let (_, galley, _) = egui::Label::new(rich.clone()).wrap().layout_in_ui(ui);
+        let text_w = (galley.size().x + 24.0).min(max_w);
+
+        // Spacer so the bubble lands left or right.
+        let spacer = match align {
+            egui::Align::RIGHT => ui.available_width() - text_w - 10.0,
+            _ => 10.0,
+        }
+        .max(4.0);
+
+        ui.horizontal(|ui| {
+            if align == egui::Align::RIGHT {
+                ui.add_space(spacer);
+            }
+            let frame = egui::Frame::new()
+                .fill(fill)
+                .corner_radius(egui::CornerRadius::same(10))
+                .inner_margin(egui::Margin::symmetric(12, 7))
+                .stroke(egui::Stroke::new(1.0, NIGHT_EDGE));
+            frame.show(ui, |ui| {
+                ui.set_width(text_w);
+                ui.add(egui::Label::new(rich).wrap());
+            });
+            if align == egui::Align::LEFT {
+                ui.add_space(8.0);
+            }
+        });
+
+        // Author + action under the bubble.
+        ui.horizontal(|ui| {
+            if align == egui::Align::RIGHT {
+                ui.add_space(ui.available_width() - 140.0);
+                ui.label(egui::RichText::new(who).small().color(who_color));
+            } else {
+                ui.label(egui::RichText::new(who).small().color(who_color));
+                if let Some(a) = &line.action {
+                    if !a.is_empty() {
+                        ui.label(
+                            egui::RichText::new(format!("· {a}"))
+                                .small()
+                                .color(TEXT_LOW),
+                        );
+                    }
+                }
+            }
+        });
+        ui.add_space(10.0);
     }
 }
 
@@ -576,7 +741,8 @@ fn main() -> eframe::Result<()> {
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([780.0, 560.0])
+            .with_inner_size([880.0, 640.0])
+            .with_min_inner_size([640.0, 480.0])
             .with_title("Fluxa · soma"),
         renderer: eframe::Renderer::Wgpu,
         ..Default::default()
@@ -585,7 +751,10 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Fluxa · soma",
         options,
-        Box::new(move |_cc| {
+        Box::new(move |cc| {
+            let ctx = &cc.egui_ctx;
+            install_fonts(ctx);
+            ctx.set_visuals(fluxa_visuals());
             Ok(Box::new(SomaApp {
                 rx: rx_in,
                 tx_out,
