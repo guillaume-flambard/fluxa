@@ -255,8 +255,14 @@ export class ConversationMemory {
   }
 
   setVisceralPrior(v: VisceralState): void {
+    // Mean-reversion: pull stress back toward resting level so a single refusal
+    // cannot ratchet it permanently to 1.0.
+    const restingStress = 0.3;
+    const reversion = 0.25;
     this.data.visceralPrior = {
-      stress_level: clamp01(v.stress_level),
+      stress_level: clamp01(
+        v.stress_level - (v.stress_level - restingStress) * reversion,
+      ),
       energy_level: clamp01(v.energy_level),
       affinity_level: clamp01(v.affinity_level),
     };
@@ -643,11 +649,14 @@ export class ConversationMemory {
       }
     }
 
-    // EMA visceral prior
+    // EMA visceral prior, with mean-reversion so stress decays toward resting level
     const a = 0.25;
+    const restingStress = 0.3;
+    const stressEma =
+      this.data.visceralPrior.stress_level * (1 - a) + visceral.stress_level * a;
     this.data.visceralPrior = {
       stress_level: clamp01(
-        this.data.visceralPrior.stress_level * (1 - a) + visceral.stress_level * a,
+        stressEma - (stressEma - restingStress) * 0.25,
       ),
       energy_level: clamp01(
         this.data.visceralPrior.energy_level * (1 - a) + visceral.energy_level * a,
@@ -1314,7 +1323,7 @@ export class LocalDialogueEngine {
     }
     const stressBump =
       attitude.stance === "refuse"
-        ? 0.2
+        ? 0.05
         : attitude.stance === "negotiate"
           ? 0.08
           : -0.05;

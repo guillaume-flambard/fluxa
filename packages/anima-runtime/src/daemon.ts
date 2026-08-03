@@ -273,6 +273,7 @@ async function executeAct(
           role: "anima",
           text: spoken,
           action: "speak",
+          kind: "reply",
           ...(will.inner ? { inner: will.inner } : {}),
         });
       }
@@ -531,6 +532,7 @@ async function main(): Promise<void> {
           role: "anima",
           text: reply,
           action: String(will.attitude?.stance ?? "speak"),
+          kind: "reply",
           ...(will.inner ? { inner: will.inner } : {}),
         });
 
@@ -638,12 +640,14 @@ async function main(): Promise<void> {
           role: "anima",
           text: lineForPulse(decision.action, decision.thought),
           action: decision.action,
+          kind: "pulse",
         });
       } else if (!result.startsWith("speak:")) {
         ipc.broadcastLine({
           role: "anima",
           text: lineForPulse("speak", decision.thought),
           action: "speak",
+          kind: "pulse",
         });
       }
 

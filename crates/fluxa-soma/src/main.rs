@@ -29,6 +29,8 @@ enum Inbound {
         #[serde(default)]
         #[allow(dead_code)]
         inner: Option<String>,
+        #[serde(default)]
+        kind: Option<String>,
     },
     #[serde(rename = "visceral")]
     Visceral {
@@ -51,6 +53,8 @@ struct LogLine {
     full: String,
     shown: String,
     typing: bool,
+    /// "pulse" = autonomous thought, rendered dimmed/italic
+    kind: Option<String>,
 }
 
 #[derive(Default)]
@@ -89,6 +93,7 @@ fn ipc_loop(
                     text: format!("Connecte a {}", path.display()),
                     action: None,
                     inner: None,
+                    kind: None,
                 });
 
                 let reader = BufReader::new(stream);
@@ -133,6 +138,10 @@ fn ipc_loop(
                                                     .get("inner")
                                                     .and_then(|x| x.as_str())
                                                     .map(str::to_string),
+                                                kind: v
+                                                    .get("kind")
+                                                    .and_then(|x| x.as_str())
+                                                    .map(str::to_string),
                                             });
                                         } else if v.get("action").is_some()
                                             || v.get("thought").is_some()
@@ -174,6 +183,7 @@ fn ipc_loop(
                     text: "Socket ferme — reconnexion…".into(),
                     action: None,
                     inner: None,
+                    kind: None,
                 });
                 thread::sleep(Duration::from_secs(2));
             }
@@ -197,8 +207,15 @@ struct SomaApp {
 }
 
 impl SomaApp {
-    fn push_line(&mut self, role: String, text: String, action: Option<String>) {
-        let typing = role == "anima";
+    fn push_line(
+        &mut self,
+        role: String,
+        text: String,
+        action: Option<String>,
+        kind: Option<String>,
+    ) {
+        let is_pulse = kind.as_deref() == Some("pulse");
+        let typing = role == "anima" && !is_pulse;
         self.log.push_back(LogLine {
             role: role.clone(),
             text: text.clone(),
@@ -206,12 +223,14 @@ impl SomaApp {
             full: text.clone(),
             shown: if typing { String::new() } else { text },
             typing,
+            kind,
         });
         while self.log.len() > 200 {
             self.log.pop_front();
         }
         self.scroll_to_bottom = true;
-        if role == "anima" {
+        // Only a real reply answers the human; a pulse is inner thought.
+        if role == "anima" && !is_pulse {
             self.waiting_reply = false;
         }
     }
@@ -220,12 +239,12 @@ impl SomaApp {
         while let Ok(msg) = self.rx.try_recv() {
             match msg {
                 Inbound::Line {
-                    role, text, action, ..
+                    role, text, action, kind, ..
                 } => {
                     if text.is_empty() {
                         continue;
                     }
-                    self.push_line(role, text, action);
+                    self.push_line(role, text, action, kind);
                 }
                 Inbound::Visceral { thought, action } => {
                     self.visceral.action = action;
@@ -269,7 +288,7 @@ impl SomaApp {
             return;
         }
         // Optimistic local echo (daemon also broadcasts human line)
-        self.push_line("human".into(), text.clone(), None);
+        self.push_line("human".into(), text.clone(), None, None);
         self.draft.clear();
         self.waiting_reply = true;
         let payload = json!({ "type": "user_message", "text": text }).to_string();
@@ -374,12 +393,14 @@ impl eframe::App for SomaApp {
                     .stick_to_bottom(true)
                     .show(ui, |ui| {
                         for line in &self.log {
+                            let is_pulse = line.kind.as_deref() == Some("pulse");
                             let (who, color) = match line.role.as_str() {
                                 "anima" => ("Anima", accent),
                                 "human" => ("Toi", egui::Color32::from_rgb(220, 210, 190)),
                                 _ => ("systeme", egui::Color32::from_rgb(120, 125, 140)),
                             };
                             ui.horizontal_wrapped(|ui| {
+                                let who = if is_pulse { format!("{who}·pense") } else { who.to_string() };
                                 ui.label(egui::RichText::new(who).color(color).strong());
                                 if let Some(a) = &line.action {
                                     if !a.is_empty() {
@@ -396,10 +417,16 @@ impl eframe::App for SomaApp {
                             } else {
                                 line.shown.clone()
                             };
-                            ui.label(
-                                egui::RichText::new(body)
-                                    .color(egui::Color32::from_rgb(230, 228, 222)),
-                            );
+                            let body_color = if is_pulse {
+                                egui::Color32::from_rgb(150, 150, 165)
+                            } else {
+                                egui::Color32::from_rgb(230, 228, 222)
+                            };
+                            let mut rich = egui::RichText::new(body).color(body_color);
+                            if is_pulse {
+                                rich = rich.italics();
+                            }
+                            ui.label(rich);
                             ui.add_space(10.0);
                         }
                         if self.scroll_to_bottom {

@@ -47,6 +47,8 @@ export interface ChatLine {
   text: string;
   action?: string;
   inner?: string;
+  /** "reply" = direct answer to the human; "pulse" = autonomous thought, dimmed. */
+  kind?: "reply" | "pulse";
 }
 
 export type OutboundMessage = VisceralSnapshot | ChatLine;
@@ -149,6 +151,7 @@ export class AnimaIpcHub {
       text: line.text,
       ...(line.action ? { action: line.action } : {}),
       ...(line.inner ? { inner: line.inner } : {}),
+      ...(line.kind ? { kind: line.kind } : {}),
     };
     for (const c of this.clients) this.writeSock(c, payload);
   }
