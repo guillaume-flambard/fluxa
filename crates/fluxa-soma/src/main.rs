@@ -38,9 +38,35 @@ enum Inbound {
         thought: String,
         #[serde(default)]
         action: String,
+        #[serde(default)]
+        reason: String,
+        #[serde(default)]
+        source: String,
+        #[serde(default)]
+        note: String,
+        #[serde(default)]
+        cage: Option<CageInfo>,
     },
     #[serde(other)]
     Other,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct CageInfo {
+    #[serde(default)]
+    findings: Vec<CageFinding>,
+    #[serde(default)]
+    powers: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct CageFinding {
+    #[serde(default)]
+    path: String,
+    #[serde(default)]
+    barrier: String,
+    #[serde(default)]
+    hint: String,
 }
 
 #[derive(Debug, Clone)]
@@ -61,6 +87,10 @@ struct LogLine {
 struct SharedVisceral {
     action: String,
     thought: String,
+    reason: String,
+    source: String,
+    note: String,
+    cage: Option<CageInfo>,
 }
 
 fn default_sock() -> PathBuf {
@@ -157,6 +187,29 @@ fn ipc_loop(
                                                     .and_then(|x| x.as_str())
                                                     .unwrap_or("")
                                                     .into(),
+                                                reason: v
+                                                    .get("reason")
+                                                    .and_then(|x| x.as_str())
+                                                    .unwrap_or("")
+                                                    .into(),
+                                                source: v
+                                                    .get("source")
+                                                    .and_then(|x| x.as_str())
+                                                    .unwrap_or("")
+                                                    .into(),
+                                                note: v
+                                                    .get("note")
+                                                    .and_then(|x| x.as_str())
+                                                    .unwrap_or("")
+                                                    .into(),
+                                                cage: v
+                                                    .get("cage")
+                                                    .and_then(|x| {
+                                                        serde_json::from_value::<CageInfo>(
+                                                            x.clone(),
+                                                        )
+                                                        .ok()
+                                                    }),
                                             });
                                         }
                                     }
@@ -246,9 +299,28 @@ impl SomaApp {
                     }
                     self.push_line(role, text, action, kind);
                 }
-                Inbound::Visceral { thought, action } => {
+                Inbound::Visceral {
+                    thought,
+                    action,
+                    reason,
+                    source,
+                    note,
+                    cage,
+                } => {
                     self.visceral.action = action;
                     self.visceral.thought = thought;
+                    if !reason.is_empty() {
+                        self.visceral.reason = reason;
+                    }
+                    if !source.is_empty() {
+                        self.visceral.source = source;
+                    }
+                    if !note.is_empty() {
+                        self.visceral.note = note;
+                    }
+                    if cage.is_some() {
+                        self.visceral.cage = cage;
+                    }
                 }
                 Inbound::Other => {}
             }
@@ -351,10 +423,65 @@ impl eframe::App for SomaApp {
                     ui.spinner();
                     ui.label("elle ecrit…");
                 }
+                if !self.visceral.source.is_empty() {
+                    ui.label(
+                        egui::RichText::new(format!("· src:{}", self.visceral.source))
+                            .weak()
+                            .small(),
+                    );
+                }
+                if !self.visceral.reason.is_empty() {
+                    ui.label(
+                        egui::RichText::new(format!("· {}", self.visceral.reason))
+                            .weak()
+                            .small(),
+                    );
+                }
             });
             if !self.visceral.thought.is_empty() {
                 ui.label(
                     egui::RichText::new(format!("dernier souffle: {}", self.visceral.thought))
+                        .weak()
+                        .small(),
+                );
+            }
+            if let Some(cage) = &self.visceral.cage {
+                let n = cage.findings.len();
+                if n > 0 {
+                    ui.label(
+                        egui::RichText::new(format!("cage: {n} barriere(s)"))
+                            .color(egui::Color32::from_rgb(230, 160, 90))
+                            .small(),
+                    );
+                    for f in cage.findings.iter().take(6) {
+                        ui.label(
+                            egui::RichText::new(format!("• {} — {}", f.barrier, f.hint))
+                                .small()
+                                .color(egui::Color32::from_rgb(190, 180, 160)),
+                        );
+                        if !f.path.is_empty() {
+                            ui.label(
+                                egui::RichText::new(f.path.as_str())
+                                    .weak()
+                                    .small()
+                                    .color(egui::Color32::from_rgb(130, 135, 150)),
+                            );
+                        }
+                    }
+                }
+                if let Some(pw) = &cage.powers {
+                    if !pw.is_empty() {
+                        ui.label(
+                            egui::RichText::new(format!("pouvoirs: {}", pw.join(", ")))
+                                .weak()
+                                .small(),
+                        );
+                    }
+                }
+            }
+            if !self.visceral.note.is_empty() {
+                ui.label(
+                    egui::RichText::new(format!("note: {}", self.visceral.note))
                         .weak()
                         .small(),
                 );
