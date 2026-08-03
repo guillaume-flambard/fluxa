@@ -32,15 +32,41 @@ import {
 } from "@fluxa/core";
 import { AnimaIpcHub } from "./ipc.js";
 import { desiresFromAction, notifyMac } from "./desires.js";
-import { createFileStorage, defaultMemoryDir } from "./fileStorage.js";
+import { createFileStorage, defaultMemoryDir, type StorageLike } from "./fileStorage.js";
 
 const VAULT_FLUXA = join(homedir(), "Vault", "07-Research", "Fluxa");
 const JOURNAL = join(VAULT_FLUXA, "Anima-Journal.md");
 const LIVING_STATE = join(VAULT_FLUXA, "Living-State.md");
 const BEAT_MS = Number(process.env.FLUXA_BEAT_MS ?? 90_000);
+const LAST_REPLY_KEY = "fluxa.lastreply.v1";
 
 /** Latest cage-inspection findings (surfaced to the soma header). */
 let lastCageFindings: CageFinding[] = [];
+
+type LastReplyRec = { text: string; at: number };
+
+function loadLastReply(storage: StorageLike): LastReplyRec | null {
+  try {
+    const raw = storage.getItem(LAST_REPLY_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<LastReplyRec>;
+    if (typeof parsed.text === "string" && parsed.text.trim()) {
+      return { text: parsed.text, at: Number(parsed.at) || 0 };
+    }
+  } catch {
+    /* corrupt */
+  }
+  return null;
+}
+
+function saveLastReply(storage: StorageLike, rec: LastReplyRec | null): void {
+  try {
+    if (rec) storage.setItem(LAST_REPLY_KEY, JSON.stringify(rec));
+    else storage.removeItem(LAST_REPLY_KEY);
+  } catch {
+    /* */
+  }
+}
 
 function loadLlm(): LlmCortexConfig | null {
   const ollamaBase = process.env.FLUXA_OLLAMA_BASE?.trim();
@@ -175,6 +201,11 @@ type ActCtx = {
   llm: LlmCortexConfig | null;
 };
 
+/** Markdown notes always land in the Fluxa Vault, never the repo docs/. */
+function isVaultNote(path: string): boolean {
+  return path.endsWith(".md") && !path.startsWith("packages/");
+}
+
 async function executeReverse(
   thought: string,
   cognitive: CognitiveCore,
@@ -235,10 +266,7 @@ async function executeReverse(
     cognitive.sidecarUrlPublic,
     cortex.llmConfig ?? null,
   );
-  const targetIsVault =
-    plan.targetPath.endsWith(".md") &&
-    !plan.targetPath.startsWith("packages/") &&
-    !plan.targetPath.startsWith("docs/");
+  const targetIsVault = isVaultNote(plan.targetPath);
   const applyBody: {
     thought: string;
     reason: string;
@@ -477,6 +505,10 @@ async function executeAct(
         pathHint: String(args.path ?? ""),
       });
       if (!proposal) return "autocode:no_proposal";
+      // Notes always go to the Vault; only TS patches touch the repo.
+      if (isVaultNote(proposal.path)) {
+        proposal.target = "fluxa_vault";
+      }
       const result = await auto.apply(proposal);
       await appendJournal(
         `- Autocode.\n- path: ${proposal.path}\n- ok: ${result.ok}\n- ${thought.slice(0, 240)}`,
@@ -549,7 +581,10 @@ async function main(): Promise<void> {
   let beating = true;
   let busyUser = false;
   let pulseAbort: AbortController | null = null;
-  let lastReply: { text: string; at: number } | null = null;
+  let lastReply: LastReplyRec | null = loadLastReply(storage);
+  if (lastReply) {
+    console.log(`[souveraine] derniere reponse connue (${new Date(lastReply.at).toISOString()})`);
+  }
   const pendingQueue: string[] = [];
 
   const processMessage = async (text: string): Promise<void> => {
@@ -583,6 +618,7 @@ async function main(): Promise<void> {
         cognitive.pushInnerMonologue(will.inner ?? reply);
         agenda.push(text.slice(0, 160), 0.35);
         lastReply = { text: reply, at: Date.now() };
+        saveLastReply(storage, lastReply);
         if (will.reply) {
           notifyMac("Fluxa", reply.slice(0, 160));
         }
