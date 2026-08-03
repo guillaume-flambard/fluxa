@@ -20,3 +20,11 @@ export {
   type AnimaPower,
   type WorldSnippet,
 } from "./livingMatter.js";
+export {
+  VectorStore,
+  VECTORS_STORAGE_KEY,
+  cosineSimilarity,
+  type VectorEntry,
+  type VectorHit,
+  type VectorStorageLike,
+} from "./VectorStore.js";

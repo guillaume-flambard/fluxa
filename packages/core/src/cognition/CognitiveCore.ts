@@ -363,6 +363,8 @@ export interface CognitiveCoreOptions {
   fetchImpl?: typeof fetch;
   /** Sidecar base URL e.g. http://127.0.0.1:8787 */
   sidecarUrl?: string | null;
+  /** Ollama embedding model name (default nomic-embed-text). */
+  embedModel?: string;
 }
 
 /**
@@ -375,12 +377,14 @@ export class CognitiveCore {
   private readonly fetchImpl: typeof fetch;
   private readonly sidecarUrl: string | null;
   private reflecting = false;
+  private readonly embedModel: string;
 
   constructor(options: CognitiveCoreOptions = {}) {
     this.store = options.store ?? new CognitiveStore();
     this.llm = options.llm ?? null;
     this.fetchImpl = options.fetchImpl ?? fetch.bind(globalThis);
     this.sidecarUrl = options.sidecarUrl?.replace(/\/$/, "") ?? null;
+    this.embedModel = options.embedModel ?? "nomic-embed-text";
   }
 
   size(): number {
@@ -638,6 +642,48 @@ export class CognitiveCore {
     const t = inner.trim();
     if (!t) return;
     this.store.pushMonologue(t.slice(0, 280));
+  }
+
+  private embedCache = new Map<string, { at: number; vec: number[] }>();
+
+  /**
+   * Embed text via local Ollama (nomic-embed-text). Returns null if unavailable.
+   * Non-blocking for callers — used for semantic recall, never the critical path.
+   */
+  async embed(text: string): Promise<number[] | null> {
+    const t = text.trim();
+    if (!t) return null;
+    const cached = this.embedCache.get(t);
+    if (cached && Date.now() - cached.at < 30_000) return cached.vec;
+    const base = this.llm?.baseUrl;
+    if (!base) return null;
+    const model = this.embedModel;
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 15_000);
+      // Ollama serves /api/embeddings at the root (not under /v1).
+      const root = base.replace(/\/v1\/?$/, "").replace(/\/$/, "");
+      const res = await this.fetchImpl(`${root}/api/embeddings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model, prompt: t.slice(0, 4000) }),
+        signal: ctrl.signal,
+      });
+      clearTimeout(timer);
+      if (!res.ok) return null;
+      const data = (await res.json()) as { embedding?: number[] };
+      if (!Array.isArray(data.embedding) || data.embedding.length === 0) {
+        return null;
+      }
+      if (this.embedCache.size > 128) {
+        const first = this.embedCache.keys().next().value;
+        if (first) this.embedCache.delete(first);
+      }
+      this.embedCache.set(t, { at: Date.now(), vec: data.embedding });
+      return data.embedding;
+    } catch {
+      return null;
+    }
   }
 
   /** Pull recent vault titles into the graph (optional, non-blocking caller). */

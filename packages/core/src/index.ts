@@ -129,6 +129,14 @@ export {
   type WorldSnippet,
 } from "./cognition/index.js";
 export {
+  VectorStore,
+  VECTORS_STORAGE_KEY,
+  cosineSimilarity,
+  type VectorEntry,
+  type VectorHit,
+  type VectorStorageLike,
+} from "./cognition/index.js";
+export {
   FluxaWillEngine,
   detectWillIntentKind,
   stanceExpressionOps,

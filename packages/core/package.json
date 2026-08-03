@@ -20,6 +20,7 @@
     "test:compiler": "tsx src/expression/compiler/selftest.ts",
     "test:will": "tsx src/will/selftest.ts",
     "test:memory": "tsx src/dialogue/selftest.ts",
+    "test:vectors": "tsx src/cognition/vectors.selftest.ts",
     "test:sovereignty": "tsx src/sovereignty/selftest.ts"
   },
   "devDependencies": {
