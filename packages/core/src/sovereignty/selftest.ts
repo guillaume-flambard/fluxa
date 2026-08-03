@@ -2,7 +2,7 @@
  * Sovereignty selftest (palier 1.9, no network LLM).
  * Run: pnpm --filter @fluxa/core test:sovereignty
  */
-import { decideLocal, type SovereignContext } from "./SovereignWill.js";
+import { decideLocal, breakActionStreak, type SovereignContext, type SovereignDecision } from "./SovereignWill.js";
 import { analyzeCage, planLocalReverse, CAGE_MAP } from "./ReverseEngine.js";
 import { ANIMA_POWERS } from "../cognition/livingMatter.js";
 
@@ -77,6 +77,19 @@ assert(plan, "reverse plan");
 assert(plan!.mode === "replace_span", "local reverse patches cooldown");
 assert(plan!.find?.includes("12000"), "find old cooldown");
 assert(CAGE_MAP.length >= 3, "cage map");
+
+// breakActionStreak: a 3x reverse burst must be broken into a different act.
+const burst: SovereignDecision = {
+  thought: "elargir la cage",
+  action: "reverse",
+  args: {},
+  reason: "retro",
+  source: "llm",
+};
+const broken = breakActionStreak(burst, ["reverse", "reverse", "reverse"]);
+assert(broken.action !== "reverse", `burst of reverse should break, got ${broken.action}`);
+const kept = breakActionStreak(burst, ["think", "read", "silence"]);
+assert(kept.action === "reverse", "non-repeating action kept");
 
 console.log("sovereignty 1.9 selftest ok", {
   sample: d.action,

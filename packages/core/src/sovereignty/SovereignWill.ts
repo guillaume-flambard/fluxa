@@ -96,6 +96,35 @@ function parseDecision(raw: unknown, source: "llm" | "local"): SovereignDecision
   };
 }
 
+/**
+ * Hard anti-loop: the LLM is told not to repeat, but when it still does we
+ * override. If the chosen action appears 2+ times in the recent history, swap
+ * to a different, still-legitimate act so pulses stay varied.
+ */
+export function breakActionStreak(
+  decision: SovereignDecision,
+  recent: string[],
+): SovereignDecision {
+  const window = recent.slice(-3);
+  const count = window.filter((a) => a === decision.action).length;
+  if (count < 2) return decision;
+
+  const menu: AnimaPower[] = [
+    "think",
+    "silence",
+    "read",
+    "write_note",
+    "think",
+    "speak",
+    "silence",
+  ];
+  const alternative =
+    menu.find((m) => m !== decision.action && !window.includes(m)) ??
+    menu.find((m) => m !== decision.action) ??
+    "think";
+  return { ...decision, action: alternative };
+}
+
 /** Local heuristic when no LLM — still a choice, not a fixed script. */
 export function decideLocal(ctx: SovereignContext): SovereignDecision {
   const stress = ctx.stress ?? 0.3;
@@ -289,7 +318,7 @@ export async function decideSovereign(
         const content = data.choices?.[0]?.message?.content;
         if (content) {
           const parsed = parseDecision(extractJsonObject(content), "llm");
-          if (parsed) return parsed;
+          if (parsed) return breakActionStreak(parsed, ctx.recentActions ?? []);
         }
       }
     } catch {
