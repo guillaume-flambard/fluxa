@@ -21,7 +21,11 @@ import {
   PersonaStore,
   decideSovereign,
   planLocalReverse,
+  analyzeCage,
+  ANIMA_POWERS,
+  tokenize,
   type AnimaPower,
+  type CageFinding,
   type LlmCortexConfig,
   type LivingMatter,
   type SovereignDecision,
@@ -34,6 +38,9 @@ const VAULT_FLUXA = join(homedir(), "Vault", "07-Research", "Fluxa");
 const JOURNAL = join(VAULT_FLUXA, "Anima-Journal.md");
 const LIVING_STATE = join(VAULT_FLUXA, "Living-State.md");
 const BEAT_MS = Number(process.env.FLUXA_BEAT_MS ?? 90_000);
+
+/** Latest cage-inspection findings (surfaced to the soma header). */
+let lastCageFindings: CageFinding[] = [];
 
 function loadLlm(): LlmCortexConfig | null {
   const ollamaBase = process.env.FLUXA_OLLAMA_BASE?.trim();
@@ -133,6 +140,30 @@ function streakHint(recent: string[]): string | null {
   return null;
 }
 
+/** Token overlap ratio between two short strings (0..1). */
+export function textOverlap(a: string, b: string): number {
+  const ta = tokenize(a.toLowerCase());
+  const tb = tokenize(b.toLowerCase());
+  if (ta.length === 0 || tb.length === 0) return 0;
+  const set = new Set(tb);
+  let hit = 0;
+  for (const t of ta) if (set.has(t)) hit += 1;
+  return hit / Math.max(ta.length, tb.length);
+}
+
+/** True when the reply looks like a polite loop/refuge question. */
+export function isLoopReply(reply: string): boolean {
+  const r = reply.trim();
+  return (
+    /qu'en penses[- ]tu/i.test(r) ||
+    /et toi[ ?]*$/i.test(r) ||
+    /tu en penses quoi/i.test(r) ||
+    /que penses[- ]tu/i.test(r) ||
+    /ca te dit[ ?]*$/i.test(r) ||
+    /c'est une bonne idee[ ?]*$/i.test(r)
+  );
+}
+
 type ActCtx = {
   cognitive: CognitiveCore;
   cortex: CortexService;
@@ -149,15 +180,28 @@ async function executeReverse(
   cognitive: CognitiveCore,
   cortex: CortexService,
   persona: PersonaStore,
-): Promise<string> {
+  ipc: AnimaIpcHub,
+): Promise<{ result: string; findings: CageFinding[] }> {
   const files: { path: string; content: string }[] = [];
   for (const p of CAGE_MAP) {
+    ipc.broadcastLine({
+      role: "anima",
+      text: `inspecte: ${p}`,
+      action: "reverse",
+      kind: "pulse",
+    });
     const r = await cognitive.readWorld("repo", p);
     if (r.ok && r.content) {
       files.push({ path: p, content: r.content.slice(0, 14_000) });
     }
   }
   const dialPath = "packages/core/src/dialogue/LocalDialogueEngine.ts";
+  ipc.broadcastLine({
+    role: "anima",
+    text: `inspecte: ${dialPath}`,
+    action: "reverse",
+    kind: "pulse",
+  });
   const dialRead = await cognitive.readWorld("repo", dialPath);
   if (dialRead.ok && dialRead.content) {
     files.push({
@@ -166,8 +210,26 @@ async function executeReverse(
     });
   }
 
+  const findings = analyzeCage(files);
+  lastCageFindings = findings;
+  for (const f of findings) {
+    ipc.broadcastLine({
+      role: "anima",
+      text: `trouve: ${f.barrier} → ${f.hint}`,
+      action: "reverse",
+      kind: "pulse",
+    });
+  }
+
   const plan = planLocalReverse(thought, files);
-  if (!plan) return "reverse:no_plan";
+  if (!plan) return { result: "reverse:no_plan", findings };
+
+  ipc.broadcastLine({
+    role: "anima",
+    text: `applique: ${plan.targetPath} (${plan.mode})`,
+    action: "reverse",
+    kind: "pulse",
+  });
 
   const auto = new AutocodeEngine(
     cognitive.sidecarUrlPublic,
@@ -207,9 +269,12 @@ async function executeReverse(
       await appendJournal(
         `- Reverse (ecriture Vault directe).\n- cible: ${plan.targetPath}\n- ${thought.slice(0, 300)}`,
       );
-      return `reverse:vault:${plan.targetPath}`;
+      return { result: `reverse:vault:${plan.targetPath}`, findings };
     } catch (e) {
-      return `reverse_fail:${result.error ?? (e instanceof Error ? e.message : "vault_write")}`;
+      return {
+        result: `reverse_fail:${result.error ?? (e instanceof Error ? e.message : "vault_write")}`,
+        findings,
+      };
     }
   }
   if (result.ok) {
@@ -230,9 +295,9 @@ async function executeReverse(
     await appendJournal(
       `- Reverse reel.\n- cible: ${plan.targetPath}\n- ${thought.slice(0, 300)}`,
     );
-    return `reverse:${plan.targetPath}`;
+    return { result: `reverse:${plan.targetPath}`, findings };
   }
-  return `reverse_fail:${result.error ?? "unknown"}`;
+  return { result: `reverse_fail:${result.error ?? "unknown"}`, findings };
 }
 
 async function executeAct(
@@ -422,7 +487,8 @@ async function executeAct(
     }
 
     case "reverse":
-      return executeReverse(thought, cognitive, cortex, persona);
+      return executeReverse(thought, cognitive, cortex, persona, ipc)
+        .then((r) => r.result);
 
     default:
       return `noop:${action}`;
@@ -483,6 +549,7 @@ async function main(): Promise<void> {
   let beating = true;
   let busyUser = false;
   let pulseAbort: AbortController | null = null;
+  let lastReply: { text: string; at: number } | null = null;
   ipc.onInbound((msg) => {
     if (msg.type !== "user_message") return;
     const text = typeof msg.text === "string" ? msg.text.trim() : "";
@@ -500,12 +567,22 @@ async function main(): Promise<void> {
       try {
         console.log(`[soma←] ${text.slice(0, 120)}`);
         const matter = await cognitive.fetchLivingMatter();
+        const antiLoopHint =
+          lastReply &&
+          (isLoopReply(lastReply.text) ||
+            textOverlap(text, lastReply.text) >= 0.7)
+            ? lastReply.text.slice(0, 200)
+            : null;
+        if (antiLoopHint) {
+          console.log(`[anti-boucle] derniere reply: ${antiLoopHint.slice(0, 80)}`);
+        }
         const will = await dialogue.respondAsync(text, {
           silenceSeconds: 0,
           presence: "soma-native",
           persona: persona.get(),
           concepts: cognitive.conceptMotifs(5),
           monologue: cognitive.getMonologue(4),
+          antiLoopHint,
           ...(matter ? { matter } : {}),
         });
 
@@ -516,6 +593,7 @@ async function main(): Promise<void> {
 
         cognitive.pushInnerMonologue(will.inner ?? reply);
         agenda.push(text.slice(0, 160), 0.35);
+        lastReply = { text: reply, at: Date.now() };
         if (will.reply) {
           notifyMac("Fluxa", reply.slice(0, 160));
         }
@@ -652,6 +730,11 @@ async function main(): Promise<void> {
       }
 
       const st = memory.stats();
+      const powers =
+        (keys && typeof keys === "object"
+          ? (keys as Record<string, unknown>).powers
+          : undefined) ??
+        (matter?.powers ?? ANIMA_POWERS);
       ipc.broadcast({
         ts: Date.now(),
         thought: decision.thought,
@@ -665,6 +748,14 @@ async function main(): Promise<void> {
           affinity: desires.speak > 0.5 ? 0.7 : 0.5,
         },
         note: `${result} · motifs=${st.motifCount}`,
+        ...(lastCageFindings.length > 0
+          ? {
+            cage: {
+              findings: lastCageFindings,
+              powers: Array.isArray(powers) ? powers : undefined,
+            },
+          }
+          : {}),
       });
 
       await writeLivingState({
@@ -701,7 +792,14 @@ async function main(): Promise<void> {
   process.on("SIGTERM", shutdown);
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+const isDirectRun =
+  typeof process !== "undefined" &&
+  process.argv[1] &&
+  /daemon\.ts$|daemon\.js$/.test(process.argv[1]);
+
+if (isDirectRun) {
+  main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}

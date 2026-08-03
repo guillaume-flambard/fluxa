@@ -10,7 +10,8 @@
   "scripts": {
     "start": "tsx src/daemon.ts",
     "build": "tsup src/daemon.ts --format esm --clean",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:antiloop": "tsx src/selftest.ts"
   },
   "dependencies": {
     "@fluxa/core": "workspace:*"
