@@ -427,6 +427,11 @@ impl SomaApp {
 }
 
 impl eframe::App for SomaApp {
+    /// Opaque clear: full night background (the default is semi-transparent → terminal black).
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        NIGHT.to_normalized_gamma_f32()
+    }
+
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.drain_inbound();
         self.advance_typewriter();
@@ -584,7 +589,7 @@ impl eframe::App for SomaApp {
                     let edit = ui.add(
                         egui::TextEdit::multiline(&mut self.draft)
                             .desired_rows(2)
-                            .desired_width(ui.available_width() - 110.0)
+                            .desired_width((ui.available_width() - 110.0).max(120.0))
                             .hint_text("Parle-lui…  (Enter envoyer · Shift+Enter ligne)"),
                     );
                     let enter =
@@ -632,31 +637,6 @@ impl SomaApp {
     /// Render one log line as a rounded bubble.
     fn push_bubble(&self, ui: &mut egui::Ui, line: &LogLine, accent: egui::Color32) {
         let is_pulse = line.kind.as_deref() == Some("pulse");
-        let (who, who_color, fill, text_color, align) = match line.role.as_str() {
-            "human" => (
-                "Toi",
-                TEXT_MID,
-                egui::Color32::from_rgb(46, 50, 62),
-                TEXT_HI,
-                egui::Align::RIGHT,
-            ),
-            "anima" if is_pulse => (
-                "Anima·pense",
-                SLATE,
-                NIGHT_RAISED,
-                TEXT_MID,
-                egui::Align::LEFT,
-            ),
-            "anima" => ("Anima", accent, tint(accent, 0.14), TEXT_HI, egui::Align::LEFT),
-            _ => (
-                "système",
-                TEXT_LOW,
-                NIGHT,
-                TEXT_LOW,
-                egui::Align::Center,
-            ),
-        };
-
         let body = if line.typing {
             format!("{}▌", line.shown)
         } else {
@@ -673,60 +653,67 @@ impl SomaApp {
             return;
         }
 
+        let align_right = line.role == "human";
+        let (who, who_color) = if align_right {
+            ("Toi", TEXT_MID)
+        } else if is_pulse {
+            ("Anima·pense", SLATE)
+        } else {
+            ("Anima", accent)
+        };
+        let fill = if is_pulse {
+            NIGHT_RAISED
+        } else if align_right {
+            egui::Color32::from_rgb(50, 54, 66)
+        } else {
+            tint(accent, 0.22)
+        };
+        let text_color = if is_pulse { TEXT_MID } else { TEXT_HI };
+
         let mut rich = egui::RichText::new(body).color(text_color);
         if is_pulse {
             rich = rich.italics();
         }
 
-        // Measure wrapped text width (max 76% of panel).
-        let max_w = (ui.available_width() * 0.76).max(160.0);
-        let (_, galley, _) = egui::Label::new(rich.clone()).wrap().layout_in_ui(ui);
-        let text_w = (galley.size().x + 24.0).min(max_w);
+        // Bubble width: capped at 78% of the panel, floor 120px, never negative.
+        let avail = ui.available_width().max(0.0);
+        let max_w = (avail * 0.78).max(120.0).min(avail.max(120.0));
 
-        // Spacer so the bubble lands left or right.
-        let spacer = match align {
-            egui::Align::RIGHT => ui.available_width() - text_w - 10.0,
-            _ => 10.0,
-        }
-        .max(4.0);
+        let frame = egui::Frame::new()
+            .fill(fill)
+            .corner_radius(egui::CornerRadius::same(10))
+            .inner_margin(egui::Margin::symmetric(12, 7))
+            .stroke(egui::Stroke::new(1.0, NIGHT_EDGE));
 
-        ui.horizontal(|ui| {
-            if align == egui::Align::RIGHT {
-                ui.add_space(spacer);
-            }
-            let frame = egui::Frame::new()
-                .fill(fill)
-                .corner_radius(egui::CornerRadius::same(10))
-                .inner_margin(egui::Margin::symmetric(12, 7))
-                .stroke(egui::Stroke::new(1.0, NIGHT_EDGE));
+        // Align via layout (never negative spacers).
+        let layout = if align_right {
+            egui::Layout::right_to_left(egui::Align::Min)
+        } else {
+            egui::Layout::left_to_right(egui::Align::Min)
+        };
+
+        ui.with_layout(layout, |ui| {
+            ui.set_max_width(max_w);
             frame.show(ui, |ui| {
-                ui.set_width(text_w);
+                ui.set_max_width(max_w);
                 ui.add(egui::Label::new(rich).wrap());
             });
-            if align == egui::Align::LEFT {
-                ui.add_space(8.0);
-            }
         });
 
-        // Author + action under the bubble.
-        ui.horizontal(|ui| {
-            if align == egui::Align::RIGHT {
-                ui.add_space(ui.available_width() - 140.0);
-                ui.label(egui::RichText::new(who).small().color(who_color));
-            } else {
-                ui.label(egui::RichText::new(who).small().color(who_color));
-                if let Some(a) = &line.action {
-                    if !a.is_empty() {
-                        ui.label(
-                            egui::RichText::new(format!("· {a}"))
-                                .small()
-                                .color(TEXT_LOW),
-                        );
-                    }
+        // Author under the bubble.
+        ui.with_layout(layout, |ui| {
+            ui.label(egui::RichText::new(who).small().color(who_color).strong());
+            if let Some(a) = &line.action {
+                if !a.is_empty() {
+                    ui.label(
+                        egui::RichText::new(format!("· {a}"))
+                            .small()
+                            .color(TEXT_LOW),
+                    );
                 }
             }
         });
-        ui.add_space(10.0);
+        ui.add_space(8.0);
     }
 }
 
