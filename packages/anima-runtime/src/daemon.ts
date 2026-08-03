@@ -12,6 +12,8 @@ import {
   CognitiveCore,
   CognitiveStore,
   COGNITION_STORAGE_KEY,
+  VectorStore,
+  VECTORS_STORAGE_KEY,
   ConversationMemory,
   CortexService,
   DIALECT_STORAGE_KEY,
@@ -30,6 +32,7 @@ import {
   type CageFinding,
   type LlmCortexConfig,
   type LivingMatter,
+  type MemoryEpisode,
   type SovereignDecision,
 } from "@fluxa/core";
 import { AnimaIpcHub } from "./ipc.js";
@@ -148,6 +151,7 @@ function createCognitive(llm: LlmCortexConfig | null, storage: StorageLike): Cog
     sidecarUrl,
     llm,
     store: new CognitiveStore({ storage, key: COGNITION_STORAGE_KEY }),
+    embedModel: process.env.FLUXA_EMBED_MODEL?.trim() || "nomic-embed-text",
   });
 }
 
@@ -544,6 +548,7 @@ async function main(): Promise<void> {
   );
 
   const cognitive = createCognitive(llm, storage);
+  const vectors = new VectorStore({ storage, key: VECTORS_STORAGE_KEY });
   const dialect = new DialectStore({ storage, key: DIALECT_STORAGE_KEY });
   const cortex = new CortexService({ dialect, llm });
   const memory = new ConversationMemory({
@@ -590,6 +595,24 @@ async function main(): Promise<void> {
   }
   const pendingQueue: string[] = [];
 
+  const semanticEpisodesFor = async (text: string): Promise<MemoryEpisode[] | null> => {
+    const qv = await cognitive.embed(text);
+    if (!qv) return null;
+    const hits = vectors.search(qv, 3, { minScore: 0.32 });
+    if (hits.length === 0) return null;
+    return hits
+      .map((h) => {
+        const u = h.entry.text;
+        const nl = u.indexOf("\n");
+        return {
+          user: (nl >= 0 ? u.slice(0, nl) : u).slice(0, 280),
+          assistant: (nl >= 0 ? u.slice(nl + 1) : "").slice(0, 320),
+          score: h.score,
+        };
+      })
+      .filter((e) => e.assistant);
+  };
+
   const processMessage = async (text: string): Promise<void> => {
     try {
       console.log(`[soma←] ${text.slice(0, 120)}`);
@@ -603,6 +626,12 @@ async function main(): Promise<void> {
       if (antiLoopHint) {
         console.log(`[anti-boucle] derniere reply: ${antiLoopHint.slice(0, 80)}`);
       }
+      const semanticEpisodes = await semanticEpisodesFor(text);
+      if (semanticEpisodes) {
+        console.log(
+          `[rappel] ${semanticEpisodes.length} episode(s) semantique(s) (${semanticEpisodes[0]?.score.toFixed(2)})`,
+        );
+      }
       const will = await dialogue.respondAsync(text, {
         silenceSeconds: 0,
         presence: "soma-native",
@@ -610,6 +639,7 @@ async function main(): Promise<void> {
         concepts: cognitive.conceptMotifs(5),
         monologue: cognitive.getMonologue(4),
         antiLoopHint,
+        semanticEpisodes,
         ...(matter ? { matter } : {}),
       });
 
@@ -619,6 +649,20 @@ async function main(): Promise<void> {
           "(Je reste dans le corps, sans phrase cette fois.)";
 
         cognitive.pushInnerMonologue(will.inner ?? reply);
+        // Index the exchange into the vector store for semantic recall.
+        void (async () => {
+          const pair = `${text}\n${reply}`;
+          const qv = await cognitive.embed(pair);
+          if (qv) {
+            vectors.upsert({
+              id: `turn_${Date.now()}`,
+              text: pair.slice(0, 2000),
+              embedding: qv,
+              source: "turn",
+              at: Date.now(),
+            });
+          }
+        })();
         // Connect dialogue to the concept graph: the reply becomes a thought node.
         cognitive.recordDialogueThought(
           will.inner?.trim() || reply,
