@@ -43,6 +43,33 @@ function slugify(s: string): string {
   );
 }
 
+/** First 2 significant slug words — signature for near-duplicate concepts. */
+function slugSignature(slug: string): string {
+  const words = slug.split("-").filter((w) => w.length > 2);
+  return words.slice(0, 2).join("-");
+}
+
+/**
+ * Find an existing Monde-Mental note whose slug shares the same dominant words.
+ * Returns the note path to merge into, or null to create a fresh note.
+ */
+async function findNearNote(slug: string): Promise<string | null> {
+  const sig = slugSignature(slug);
+  if (!sig) return null;
+  let files: string[] = [];
+  try {
+    files = (await readdir(MONDE)).filter((f) => f.endsWith(".md"));
+  } catch {
+    return null;
+  }
+  for (const f of files) {
+    if (slugSignature(f.replace(/\.md$/, "")) === sig) {
+      return join(MONDE, f);
+    }
+  }
+  return null;
+}
+
 async function ensureLayout(): Promise<void> {
   await mkdir(MONDE, { recursive: true });
   const starters: [string, string][] = [
@@ -173,10 +200,22 @@ async function handleReflect(body: string): Promise<{ ok: boolean; path?: string
   );
 
   const fileSlug = slugify(thought.concept);
-  const notePath = join(MONDE, `${fileSlug}.md`);
+  // Dedup: merge into a near-identical note instead of spawning a new file.
+  const near = await findNearNote(fileSlug);
+  const notePath = near ?? join(MONDE, `${fileSlug}.md`);
   const links = (thought.connections ?? ["core_identity"])
     .map((c) => `[[${c}]]`)
     .join(", ");
+
+  let prevBody = "";
+  if (near) {
+    try {
+      prevBody = (await readFile(near, "utf8")).slice(0, 2000);
+    } catch {
+      /* fresh */
+    }
+  }
+
   const note = `---
 title: ${thought.concept.replace(/"/g, "'").slice(0, 120)}
 type: concept
@@ -199,7 +238,10 @@ ${links}
 - source: ${thought.source ?? "dream"}
 - weight: ${thought.weight ?? 0.5}
 `;
-  await writeFile(notePath, note, "utf8");
+
+  // On merge: keep prior content as an "echo" below the fresh note so nothing is lost.
+  const finalBody = near && prevBody ? `${note}\n\n<details><summary>echo précédent</summary>\n\n${prevBody}\n</details>\n` : note;
+  await writeFile(notePath, finalBody, "utf8");
   return { ok: true, path: notePath };
 }
 
