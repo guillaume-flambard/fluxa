@@ -937,6 +937,8 @@ export interface RespondContext {
   persona?: string;
   /** Sovereign already decided to speak — skip silence/cooldown gates */
   sovereignForce?: boolean;
+  /** Last reply Anima gave; forces a different answer (anti-loop marker). */
+  antiLoopHint?: string | null;
 }
 
 /** Expression-first will: body mutates; reply is live/memory speech. */
@@ -1113,6 +1115,7 @@ export class LocalDialogueEngine {
     if (context.matter) speakCtx.matter = context.matter;
     if (context.attitude) speakCtx.attitude = context.attitude;
     if (context.persona) speakCtx.persona = context.persona;
+    if (context.antiLoopHint) speakCtx.antiLoopHint = context.antiLoopHint;
     return speakCtx;
   }
 

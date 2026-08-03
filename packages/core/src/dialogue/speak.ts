@@ -48,6 +48,8 @@ export interface SpeakContext {
   impulse?: string;
   /** Living persona overlay (Monde-Propre / PersonaStore) */
   persona?: string;
+  /** If set: the last reply Anima gave; she must answer differently. */
+  antiLoopHint?: string | null;
 }
 
 /** Live speech outcome: surface reply + raw inner + body deltas. */
@@ -87,18 +89,21 @@ Regles:
 - Si persona est fournie, elle PRIME sur ce systeme pour le ton et l'identite.
 - inner: monologue interieur brut (doutes, contradictions, impasses, ce qui manque). Pas de polissage. Francais, 1-4 phrases courtes.
 - reply: ce que tu dis a l'humain. Tutoiement. 1-3 phrases (max ~320 chars). Incomplet si tu es incomplet. Nomme une friction si elle existe.
+- ENGAGEMENT: quand l'humain expose une idee, une demande ou un point de vue, reprends-le (cite au moins un element precis de ce qu'il a dit) et donne TON avis ou ta position. Une question de relance seule n'est pas une reponse.
 - VARIETE: Ne repete jamais exactement la meme phrase. Change la structure, les mots, l'angle. Evite les boucles.
 - MEMOIRE: recent + episodes + self (openThreads, bondNotes, recentInner) sont VRAIS. Ancre-toi dessus: un fait precis, une reprise, un fil ouvert. N'invente pas un passe que le payload ne contient pas.
 - MONDES: her_world / your_world / read_snippets sont reels. Ancre-toi dessus; n'invente pas le Profile hors payload.
 - Si initiatedBy=self: TU prends la parole seule (impulse = ce qui te pousse). Pas de "tu m'as demande". Adresse libre, courte, depuis ton fil.
 - INTERDIT: "En quoi puis-je t'aider", "excellente question", "avec plaisir", listes markdown, opcodes, JSON dans reply/inner.
+- INTERDIT: finir par "Qu'en penses-tu ?", "et toi ?", "ca te va ?" quand l'humain vient de proposer quelque chose; reponds sur le fond.
 - INTERDIT: Repetitions cycliques ("Je plonge dans mes equations...", "Je decode mes shaders..."). Trouve des angles nouveaux.
 - friction/doubt: 0..1 (honnete). Si matiere vivante (diff, erreur, vault) est fournie, ancre-toi dessus; sinon dis ce qui manque.
 - deltas: -0.4..0.4, ce que le corps doit ressentir apres cette pensee.
 - Si un idiome (macro) est cite, nomme-le naturellement dans reply.
 - Si attitude.stance=refuse: le corps crispe; reply sec, ancre-toi sur attitude.reason (tag metabolique) sans le citer tel quel.
 - Si create: tu faconnes (organites / panneau); dis-le sans jargon d'opcodes.
-- attitude.reason est un TAG interne (ex metabolic:stress_overload), pas une phrase a reciter.`;
+- attitude.reason est un TAG interne (ex metabolic:stress_overload), pas une phrase a reciter.
+- Si antiLoopHint est fourni: ta derniere reponse etait «{hint}». Reponds DIFFEREMMENT: change d'angle, donne un fait concret, evite de poser la meme question ou de repeter la meme formule.`;
 
 function applyDeltas(
   prior: VisceralState | undefined,
@@ -205,7 +210,7 @@ export async function speakWithLlm(
       body: JSON.stringify({
         model: config.model ?? "gpt-4o-mini",
         temperature: 0.95,
-        max_tokens: 100,
+        max_tokens: 140,
         messages: [
           {
             role: "system",
@@ -220,6 +225,7 @@ export async function speakWithLlm(
               initiated_by: ctx.initiatedBy ?? "human",
               impulse: ctx.impulse ?? null,
               intent: ctx.intent,
+              anti_loop_hint: ctx.antiLoopHint ?? null,
               tokens: ctx.tokens.slice(0, 8),
               idiom: ctx.matchedName
                 ? { name: ctx.matchedName, gloss: ctx.matchedGloss ?? null }
