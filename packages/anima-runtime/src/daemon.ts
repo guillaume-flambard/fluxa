@@ -550,41 +550,30 @@ async function main(): Promise<void> {
   let busyUser = false;
   let pulseAbort: AbortController | null = null;
   let lastReply: { text: string; at: number } | null = null;
-  ipc.onInbound((msg) => {
-    if (msg.type !== "user_message") return;
-    const text = typeof msg.text === "string" ? msg.text.trim() : "";
-    if (!text) return;
-    void (async () => {
-      if (busyUser) {
-        ipc.broadcastLine({
-          role: "system",
-          text: "Encore en train de repondre… un instant.",
-        });
-        return;
+  const pendingQueue: string[] = [];
+
+  const processMessage = async (text: string): Promise<void> => {
+    try {
+      console.log(`[soma←] ${text.slice(0, 120)}`);
+      const matter = await cognitive.fetchLivingMatter();
+      const antiLoopHint =
+        lastReply &&
+        (isLoopReply(lastReply.text) ||
+          textOverlap(text, lastReply.text) >= 0.7)
+          ? lastReply.text.slice(0, 200)
+          : null;
+      if (antiLoopHint) {
+        console.log(`[anti-boucle] derniere reply: ${antiLoopHint.slice(0, 80)}`);
       }
-      busyUser = true;
-      pulseAbort?.abort();
-      try {
-        console.log(`[soma←] ${text.slice(0, 120)}`);
-        const matter = await cognitive.fetchLivingMatter();
-        const antiLoopHint =
-          lastReply &&
-          (isLoopReply(lastReply.text) ||
-            textOverlap(text, lastReply.text) >= 0.7)
-            ? lastReply.text.slice(0, 200)
-            : null;
-        if (antiLoopHint) {
-          console.log(`[anti-boucle] derniere reply: ${antiLoopHint.slice(0, 80)}`);
-        }
-        const will = await dialogue.respondAsync(text, {
-          silenceSeconds: 0,
-          presence: "soma-native",
-          persona: persona.get(),
-          concepts: cognitive.conceptMotifs(5),
-          monologue: cognitive.getMonologue(4),
-          antiLoopHint,
-          ...(matter ? { matter } : {}),
-        });
+      const will = await dialogue.respondAsync(text, {
+        silenceSeconds: 0,
+        presence: "soma-native",
+        persona: persona.get(),
+        concepts: cognitive.conceptMotifs(5),
+        monologue: cognitive.getMonologue(4),
+        antiLoopHint,
+        ...(matter ? { matter } : {}),
+      });
 
         const reply =
           will.reply?.trim() ||
@@ -646,8 +635,34 @@ async function main(): Promise<void> {
         });
       } finally {
         busyUser = false;
+        pulseAbort = null;
+        // Drain the queue: next pending message (if any) takes over.
+        const next = pendingQueue.shift();
+        if (next && beating) {
+          void processMessage(next);
+        }
       }
-    })();
+  };
+
+  const enqueueMessage = (text: string): void => {
+    if (busyUser) {
+      pendingQueue.push(text);
+      ipc.broadcastLine({
+        role: "system",
+        text: "Je finis une phrase; je te reponds juste apres.",
+      });
+      return;
+    }
+    busyUser = true;
+    pulseAbort?.abort();
+    void processMessage(text);
+  };
+
+  ipc.onInbound((msg) => {
+    if (msg.type !== "user_message") return;
+    const text = typeof msg.text === "string" ? msg.text.trim() : "";
+    if (!text) return;
+    enqueueMessage(text);
   });
 
   const pulse = async () => {
@@ -683,6 +698,7 @@ async function main(): Promise<void> {
           ...(matter ? { matter } : {}),
           ...(keys ? { keys } : {}),
           ...(lastAction ? { lastAction } : {}),
+          ...(recentActions.length > 0 ? { recentActions } : {}),
           mode: "daemon",
           silenceSeconds: 60,
           stress: matter ? 0.35 : 0.25,
