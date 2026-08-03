@@ -35,17 +35,6 @@ const stressed = decideLocal({ ...ctx, stress: 0.9 });
 assert(stressed.action === "refuse", "high stress prefers refuse");
 
 // Decision anti-loop: recentActions that repeat the candidate action force a switch.
-const seedMenu: AnimaPower[] = [
-  "think",
-  "speak",
-  "silence",
-  "read",
-  "write_note",
-  "invent",
-  "reverse",
-];
-// Force the seed to land on "think" (index 0) by picking recentActions that
-// make the picked action (think) be repeated → should switch to a non-think.
 const anti = decideLocal({ ...ctx, recentActions: ["think", "think", "think"] });
 assert(
   anti.action !== "think",

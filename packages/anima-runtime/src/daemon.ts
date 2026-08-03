@@ -10,6 +10,8 @@ import {
   AutocodeEngine,
   CAGE_MAP,
   CognitiveCore,
+  CognitiveStore,
+  COGNITION_STORAGE_KEY,
   ConversationMemory,
   CortexService,
   DIALECT_STORAGE_KEY,
@@ -137,7 +139,7 @@ ${opts.thought.slice(0, 1200)}
   await writeFile(LIVING_STATE, body, "utf8");
 }
 
-function createCognitive(llm: LlmCortexConfig | null): CognitiveCore {
+function createCognitive(llm: LlmCortexConfig | null, storage: StorageLike): CognitiveCore {
   const sidecarUrl =
     process.env.FLUXA_COGNITION_URL ||
     process.env.VITE_FLUXA_COGNITION_URL ||
@@ -145,6 +147,7 @@ function createCognitive(llm: LlmCortexConfig | null): CognitiveCore {
   return new CognitiveCore({
     sidecarUrl,
     llm,
+    store: new CognitiveStore({ storage, key: COGNITION_STORAGE_KEY }),
   });
 }
 
@@ -540,7 +543,7 @@ async function main(): Promise<void> {
     `[SovereignCore] llm=${llm ? `${llm.model ?? "?"} @ ${llm.baseUrl}` : "ABSENT (memoire locale seule)"}`,
   );
 
-  const cognitive = createCognitive(llm);
+  const cognitive = createCognitive(llm, storage);
   const dialect = new DialectStore({ storage, key: DIALECT_STORAGE_KEY });
   const cortex = new CortexService({ dialect, llm });
   const memory = new ConversationMemory({
@@ -616,6 +619,11 @@ async function main(): Promise<void> {
           "(Je reste dans le corps, sans phrase cette fois.)";
 
         cognitive.pushInnerMonologue(will.inner ?? reply);
+        // Connect dialogue to the concept graph: the reply becomes a thought node.
+        cognitive.recordDialogueThought(
+          will.inner?.trim() || reply,
+          will.attitude?.stance === "refuse" ? "friction" : undefined,
+        );
         agenda.push(text.slice(0, 160), 0.35);
         lastReply = { text: reply, at: Date.now() };
         saveLastReply(storage, lastReply);
