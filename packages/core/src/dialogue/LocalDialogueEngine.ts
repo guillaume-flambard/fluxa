@@ -289,10 +289,23 @@ export class ConversationMemory {
 
   /** Recent real dialogue turns (skip soma-only crumbs). */
   recentDialogue(limit = 8): DialogueTurn[] {
-    return this.data.turns
+    const real = this.data.turns
       .filter((t) => !t.text.startsWith("[ael:"))
-      .filter((t) => !/^Idiome n[eé]:/i.test(t.text))
-      .slice(-limit);
+      .filter((t) => !t.text.startsWith("[CS:"))
+      .filter((t) => !/^Idiome n[eé]:/i.test(t.text));
+    const recent = real.slice(-limit);
+    // If every recent turn is an assistant monologue (long autonomous streak),
+    // walk back to include the last real user turn so the context stays grounded.
+    if (recent.length > 0 && recent.every((t) => t.role !== "user")) {
+      const lastUser = real
+        .slice(0, -1)
+        .reverse()
+        .find((t) => t.role === "user");
+      if (lastUser) {
+        return [...recent.filter((t) => t !== lastUser), lastUser];
+      }
+    }
+    return recent;
   }
 
   /**

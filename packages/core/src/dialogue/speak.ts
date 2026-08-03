@@ -61,8 +61,15 @@ export interface SpeakResult {
   visceral: VisceralState;
 }
 
-function extractJsonObject(text: string): unknown | null {
-  const trimmed = text.trim();
+/** Strip internal meta markers ([CS:…], [ael:…]) so they never leak into speech. */
+export function cleanStub(text: string): string {
+  return text
+    .replace(/^\[CS:[^\]]*\]\s*/, "")
+    .replace(/^\[ael:[^\]]*\]\s*/, "")
+    .trim();
+}
+
+function extractJsonObject(text: string): unknown | null {  const trimmed = text.trim();
   try {
     return JSON.parse(trimmed);
   } catch {
@@ -340,7 +347,10 @@ export function speakFromMemory(
       !/^« .+ » revient\.?$/.test(past.text.trim())
     ) {
       // Add contextual variation to avoid exact repetition
-      const reply = varyResponse(past.text.slice(0, 400), ctx.initiatedBy === "self");
+      const reply = varyResponse(
+        cleanStub(past.text).slice(0, 400),
+        ctx.initiatedBy === "self",
+      );
       return {
         reply,
         inner: ctx.initiatedBy === "self" ? "Je reprends un fil ancien." : "",
@@ -367,7 +377,10 @@ export function speakFromMemory(
     }
   }
   if (bestFrag) {
-    const reply = varyResponse(bestFrag.slice(0, 400), ctx.initiatedBy === "self");
+    const reply = varyResponse(
+      cleanStub(bestFrag).slice(0, 400),
+      ctx.initiatedBy === "self",
+    );
     return {
       reply,
       inner: ctx.initiatedBy === "self" ? "Une association resurgit." : "",
@@ -384,7 +397,10 @@ export function speakFromMemory(
     ctx.motif.replyStub &&
     !/^« .+ » revient\.?$/.test(ctx.motif.replyStub.trim())
   ) {
-    const reply = varyResponse(ctx.motif.replyStub.slice(0, 400), ctx.initiatedBy === "self");
+    const reply = varyResponse(
+      cleanStub(ctx.motif.replyStub).slice(0, 400),
+      ctx.initiatedBy === "self",
+    );
     return {
       reply,
       inner: ctx.initiatedBy === "self" ? `Ce motif revient: ${ctx.motif.phrase}` : "",

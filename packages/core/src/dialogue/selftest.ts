@@ -7,6 +7,7 @@ import {
   LocalDialogueEngine,
   tokenize,
 } from "./LocalDialogueEngine.js";
+import { cleanStub, speakFromMemory } from "./speak.js";
 
 class MemStorage {
   private map = new Map<string, string>();
@@ -134,6 +135,71 @@ assert(
   `anti_loop_hint should be forwarded, got ${JSON.stringify(userObj.anti_loop_hint)}`,
 );
 
+// cleanStub: meta markers must never leak into speech.
+assert(
+  cleanStub("[CS:0.70] on revient a: la cage") === "on revient a: la cage",
+  "cleanStub strips [CS:…]",
+);
+assert(
+  cleanStub("[ael:foo] bonjour") === "bonjour",
+  "cleanStub strips [ael:…]",
+);
+assert(
+  cleanStub("pas de marqueur") === "pas de marqueur",
+  "cleanStub leaves clean text",
+);
+
+// speakFromMemory: a [CS:] stub must not leak into the spoken reply.
+const memStorage2 = new MemStorage();
+const mem2 = new ConversationMemory({ storage: memStorage2, key: "test.cs" });
+mem2.learnFromUser("on parle de la cage et de la souverainete", {
+  stress_level: 0.3,
+  energy_level: 0.6,
+  affinity_level: 0.7,
+});
+mem2.pushTurn("user", "on parle de la cage et de la souverainete");
+mem2.pushTurn(
+  "assistant",
+  "on revient a: la cage et la souverainete",
+);
+const memSpoken = speakFromMemory(
+  mem2 as never,
+  {
+    userText: "on parle de la cage et de la souverainete",
+    tokens: tokenize("cage souverainete"),
+    intent: "share",
+    motif: {
+      phrase: "cage souverainete",
+      count: 3,
+      replyStub: "[CS:0.80] on revient a: la cage et la souverainete",
+    },
+  } as never,
+);
+assert(memSpoken, "memory speech should exist");
+assert(
+  !(memSpoken!.reply ?? "").includes("[CS:"),
+  "speakFromMemory must not leak [CS:] marker",
+);
+
+// recentDialogue: drops [CS:] turns and keeps a user turn even after a long assistant streak.
+const memStorage3 = new MemStorage();
+const mem3 = new ConversationMemory({ storage: memStorage3, key: "test.recent" });
+mem3.pushTurn("user", "premiere question");
+mem3.pushTurn("assistant", "reponse un");
+for (let i = 0; i < 8; i++) {
+  mem3.pushTurn("assistant", `monologue autonome ${i}`);
+}
+const recent = mem3.recentDialogue(4);
+assert(
+  recent.some((t) => t.role === "user"),
+  "recentDialogue should include the last user turn even after a long assistant streak",
+);
+assert(
+  recent.every((t) => !t.text.startsWith("[CS:")),
+  "recentDialogue should drop [CS:] turns",
+);
+
 console.log("dialogue memory selftest ok");
 console.log("  episodes:", episodes.length, "impulse:", impulse.slice(0, 48));
 console.log("  anti-loop:", userObj.anti_loop_hint);
+console.log("  cleanStub + recentDialogue: ok");
