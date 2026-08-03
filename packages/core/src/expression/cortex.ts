@@ -253,7 +253,6 @@ export async function inventLlmMacro(
       body: JSON.stringify({
         model,
         temperature: 0.8,
-        response_format: { type: "json_object" },
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: user },

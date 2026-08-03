@@ -101,7 +101,6 @@ ${opts?.hint ?? ""}
         body: JSON.stringify({
           model: this.llm.model ?? "gpt-4o-mini",
           temperature: 0.4,
-          response_format: { type: "json_object" },
           messages: [
             { role: "system", content: AUTOCODE_SYSTEM },
             {

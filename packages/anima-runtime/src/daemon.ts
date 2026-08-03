@@ -33,7 +33,7 @@ import { createFileStorage, defaultMemoryDir } from "./fileStorage.js";
 const VAULT_FLUXA = join(homedir(), "Vault", "07-Research", "Fluxa");
 const JOURNAL = join(VAULT_FLUXA, "Anima-Journal.md");
 const LIVING_STATE = join(VAULT_FLUXA, "Living-State.md");
-const BEAT_MS = Number(process.env.FLUXA_BEAT_MS ?? 45_000);
+const BEAT_MS = Number(process.env.FLUXA_BEAT_MS ?? 90_000);
 
 function loadLlm(): LlmCortexConfig | null {
   const ollamaBase = process.env.FLUXA_OLLAMA_BASE?.trim();
@@ -481,7 +481,7 @@ async function main(): Promise<void> {
   const recentActions: string[] = [];
   let beating = true;
   let busyUser = false;
-
+  let pulseAbort: AbortController | null = null;
   ipc.onInbound((msg) => {
     if (msg.type !== "user_message") return;
     const text = typeof msg.text === "string" ? msg.text.trim() : "";
@@ -495,6 +495,7 @@ async function main(): Promise<void> {
         return;
       }
       busyUser = true;
+      pulseAbort?.abort();
       try {
         console.log(`[soma←] ${text.slice(0, 120)}`);
         const matter = await cognitive.fetchLivingMatter();
@@ -571,6 +572,8 @@ async function main(): Promise<void> {
 
   const pulse = async () => {
     if (!beating || busyUser) return;
+    const controller = new AbortController();
+    pulseAbort = controller;
     try {
       await cognitive.pullFromSidecar();
       const matter = await cognitive.fetchLivingMatter();
@@ -607,11 +610,18 @@ async function main(): Promise<void> {
           affinity: 0.55,
         },
         llm,
+        fetch,
+        controller.signal,
       );
 
       lastAction = decision.action;
       recentActions.push(decision.action);
       if (recentActions.length > 12) recentActions.shift();
+
+      if (controller.signal.aborted) {
+        console.log("[pulse] interrompu (message utilisateur)");
+        return;
+      }
 
       cognitive.pushInnerMonologue(decision.thought);
 

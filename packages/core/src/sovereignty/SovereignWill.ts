@@ -200,11 +200,14 @@ export async function decideSovereign(
   ctx: SovereignContext,
   llm: LlmCortexConfig | null,
   fetchImpl: typeof fetch = fetch,
+  externalSignal?: AbortSignal,
 ): Promise<SovereignDecision> {
   if (llm?.baseUrl) {
     const base = llm.baseUrl.replace(/\/$/, "");
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), llm.timeoutMs ?? 18_000);
+    const onExternalAbort = () => ctrl.abort();
+    externalSignal?.addEventListener("abort", onExternalAbort);
     try {
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
@@ -218,7 +221,6 @@ export async function decideSovereign(
         body: JSON.stringify({
           model: llm.model ?? "gpt-4o-mini",
           temperature: 0.95,
-          response_format: { type: "json_object" },
           messages: [
             { role: "system", content: SOVEREIGN_SYSTEM },
             {
@@ -283,6 +285,7 @@ export async function decideSovereign(
       /* fall through */
     } finally {
       clearTimeout(t);
+      externalSignal?.removeEventListener("abort", onExternalAbort);
     }
   }
   return decideLocal(ctx);

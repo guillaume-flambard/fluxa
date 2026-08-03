@@ -1080,18 +1080,18 @@ export class LocalDialogueEngine {
       tokens: drafted.tokens,
       intent: drafted.intent,
       visceralPrior: drafted.visceral_state,
-      recent: this.memory.recentDialogue(8).map((t) => ({
+      recent: this.memory.recentDialogue(4).map((t) => ({
         role: t.role,
-        text: t.text.slice(0, 280),
+        text: t.text.slice(0, 200),
       })),
       episodes: this.memory.recallEpisodes(
         drafted.tokens.length ? drafted.tokens : tokenize(opts?.impulse ?? ""),
-        3,
+        2,
       ),
       self: {
-        openThreads: self.openThreads.slice(0, 5).map((t) => t.text),
-        bondNotes: self.bondNotes.slice(0, 6),
-        recentInner: self.innerLog.slice(-4).map((e) => e.text),
+        openThreads: self.openThreads.slice(0, 3).map((t) => t.text),
+        bondNotes: self.bondNotes.slice(0, 3),
+        recentInner: self.innerLog.slice(-3).map((e) => e.text),
       },
       initiatedBy: opts?.initiatedBy ?? "human",
     };

@@ -205,7 +205,7 @@ export async function speakWithLlm(
       body: JSON.stringify({
         model: config.model ?? "gpt-4o-mini",
         temperature: 0.95,
-        response_format: { type: "json_object" },
+        max_tokens: 100,
         messages: [
           {
             role: "system",
@@ -220,50 +220,64 @@ export async function speakWithLlm(
               initiated_by: ctx.initiatedBy ?? "human",
               impulse: ctx.impulse ?? null,
               intent: ctx.intent,
-              tokens: ctx.tokens.slice(0, 10),
+              tokens: ctx.tokens.slice(0, 8),
               idiom: ctx.matchedName
                 ? { name: ctx.matchedName, gloss: ctx.matchedGloss ?? null }
                 : null,
               motif: ctx.motif?.phrase ?? null,
-              concepts: (ctx.concepts ?? []).slice(0, 5),
-              recent_monologue: (ctx.monologue ?? []).slice(-4),
-              recent_dialogue: (ctx.recent ?? []).slice(-8),
-              episodes: (ctx.episodes ?? []).slice(0, 3),
+              concepts: (ctx.concepts ?? []).slice(0, 3),
+              recent_monologue: (ctx.monologue ?? []).slice(-3),
+              recent_dialogue: (ctx.recent ?? []).slice(-4),
+              episodes: (ctx.episodes ?? [])
+                .slice(0, 2)
+                .map((e) => ({
+                  user: e.user.slice(0, 160),
+                  assistant: e.assistant.slice(0, 160),
+                  score: e.score,
+                })),
               self: ctx.self
                 ? {
-                  open_threads: ctx.self.openThreads.slice(0, 5),
-                  bond_notes: ctx.self.bondNotes.slice(0, 6),
-                  recent_inner: ctx.self.recentInner.slice(-4),
+                  open_threads: ctx.self.openThreads.slice(0, 2).map((t) => t.slice(0, 110)),
+                  bond_notes: ctx.self.bondNotes.slice(0, 2).map((t) => t.slice(0, 110)),
+                  recent_inner: ctx.self.recentInner.slice(-2).map((t) => t.slice(0, 110)),
                 }
                 : null,
-              persona: ctx.persona?.slice(0, 1500) ?? null,
               her_world: matter?.herWorld
                 ? {
-                  journal: (matter.herWorld as { journal?: string[] }).journal,
+                  journal: (matter.herWorld as { journal?: string[] })
+                    .journal?.slice(-2)
+                    .map((j) => j.slice(0, 150)),
                   concepts: (matter.herWorld as { concepts?: unknown[] })
-                    .concepts,
+                    .concepts?.slice(-4)
+                    .map((c) =>
+                      typeof c === "string" ? c.slice(0, 80) : String(c).slice(0, 80),
+                    ),
                   monde_propre: String(
                     (matter.herWorld as { mondePropre?: string }).mondePropre ??
                     "",
-                  ).slice(0, 800),
+                  ).slice(0, 250),
                   agenda: String(
                     (matter.herWorld as { agendaExcerpt?: string })
                       .agendaExcerpt ?? "",
-                  ).slice(0, 600),
+                  ).slice(0, 200),
                 }
                 : null,
               your_world: matter?.yourWorld
                 ? {
                   profile: String(
                     (matter.yourWorld as { profile?: string }).profile ?? "",
-                  ).slice(0, 900),
+                  ).slice(0, 400),
                   projects: String(
                     (matter.yourWorld as { projectsManifest?: string })
                       .projectsManifest ?? "",
-                  ).slice(0, 600),
+                  ).slice(0, 300),
                 }
                 : null,
-              read_snippets: (matter?.readSnippets ?? []).slice(0, 2),
+              read_snippets: (matter?.readSnippets ?? [])
+                .slice(0, 1)
+                .map((s) => ({
+                  content: String(s.content ?? "").slice(0, 400),
+                })),
               visceral_prior: ctx.visceralPrior ?? null,
               attitude: ctx.attitude
                 ? {
@@ -275,11 +289,11 @@ export async function speakWithLlm(
                 : null,
               living_matter: matter
                 ? {
-                  git_stat: matter.gitStat?.slice(0, 1200) ?? null,
-                  last_error: matter.lastError?.slice(0, 800) ?? null,
-                  vault_excerpt: matter.vaultExcerpt?.slice(0, 1000) ?? null,
-                  vault_titles: (matter.vaultTitles ?? []).slice(0, 8),
-                  note: matter.note?.slice(0, 400) ?? null,
+                  git_stat: matter.gitStat?.slice(0, 250) ?? null,
+                  last_error: matter.lastError?.slice(0, 200) ?? null,
+                  vault_excerpt: matter.vaultExcerpt?.slice(0, 250) ?? null,
+                  vault_titles: (matter.vaultTitles ?? []).slice(0, 4),
+                  note: matter.note?.slice(0, 150) ?? null,
                 }
                 : null,
             }),

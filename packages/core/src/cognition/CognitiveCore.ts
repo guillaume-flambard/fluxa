@@ -307,7 +307,6 @@ async function synthesizeLlm(
       body: JSON.stringify({
         model: config.model ?? "gpt-4o-mini",
         temperature: 0.9,
-        response_format: { type: "json_object" },
         messages: [
           {
             role: "system",
