@@ -89,5 +89,51 @@ assert(auto, "initiate should run when silence ok");
 memory2.markAutonomous();
 assert(!memory2.canAutonomous(40), "cooldown after autonomous");
 
+// Anti-loop marker: respondAsync must forward antiLoopHint into the LLM payload.
+let captured: string | null = null;
+const mockFetch = async (
+  _url: string,
+  init?: { body?: string },
+): Promise<unknown> => {
+  captured = typeof init?.body === "string" ? init.body : null;
+  return new Response(
+    JSON.stringify({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              inner: "elle repond autrement",
+              reply: "Cette fois je reponds sur le fond, pas avec une question.",
+              friction: 0.1,
+              doubt: 0.2,
+            }),
+          },
+        },
+      ],
+    }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  );
+};
+const llmEngine = new LocalDialogueEngine({
+  memory: memory2,
+  llm: { baseUrl: "http://mock.local/v1", model: "mock", apiKey: "test" },
+  fetchImpl: mockFetch as never,
+});
+const will2 = await llmEngine.respondAsync("on travaille ensemble ?", {
+  antiLoopHint: "Qu'en penses-tu ?",
+});
+assert(will2.reply, "llm reply");
+assert(captured, "captured payload");
+const parsedPayload = JSON.parse(captured!) as {
+  messages?: { content?: string }[];
+};
+const userContent = parsedPayload.messages?.[1]?.content ?? "";
+const userObj = JSON.parse(userContent) as { anti_loop_hint?: string | null };
+assert(
+  userObj.anti_loop_hint === "Qu'en penses-tu ?",
+  `anti_loop_hint should be forwarded, got ${JSON.stringify(userObj.anti_loop_hint)}`,
+);
+
 console.log("dialogue memory selftest ok");
 console.log("  episodes:", episodes.length, "impulse:", impulse.slice(0, 48));
+console.log("  anti-loop:", userObj.anti_loop_hint);

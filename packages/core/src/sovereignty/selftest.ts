@@ -45,6 +45,21 @@ assert(
   "detect dream cooldown",
 );
 
+const cooldownFindings = analyzeCage([
+  {
+    path: "packages/core/src/dialogue/LocalDialogueEngine.ts",
+    content: "const AUTONOMOUS_COOLDOWN_MS = 90000;",
+  },
+]);
+assert(
+  cooldownFindings.some((f) => f.barrier === "autonomous_cooldown"),
+  "detect autonomous cooldown barrier",
+);
+assert(
+  cooldownFindings[0]?.path.includes("LocalDialogueEngine"),
+  "finding carries the cage path",
+);
+
 const plan = planLocalReverse("je casse ma cage", [
   {
     path: "packages/react/src/useDialogue.ts",
