@@ -632,7 +632,7 @@ async function main(): Promise<void> {
           `[rappel] ${semanticEpisodes.length} episode(s) semantique(s) (${semanticEpisodes[0]?.score.toFixed(2)})`,
         );
       }
-      const will = await dialogue.respondAsync(text, {
+      let will = await dialogue.respondAsync(text, {
         silenceSeconds: 0,
         presence: "soma-native",
         persona: persona.get(),
@@ -643,10 +643,30 @@ async function main(): Promise<void> {
         ...(matter ? { matter } : {}),
       });
 
-        const reply =
+        let reply =
           will.reply?.trim() ||
           will.inner?.trim() ||
           "(Je reste dans le corps, sans phrase cette fois.)";
+
+        // Anti-refuge: if she answered with a polite loop question, retry once
+        // with a hard hint so the reply engages instead of deflecting.
+        if (isLoopReply(reply) && will.speechSource === "llm") {
+          console.log("[anti-boucle] reponse-refuge, retry engage");
+          will = await dialogue.respondAsync(text, {
+            silenceSeconds: 0,
+            presence: "soma-native",
+            persona: persona.get(),
+            concepts: cognitive.conceptMotifs(5),
+            monologue: cognitive.getMonologue(4),
+            antiLoopHint: `N'ecris AUCUNE question. Reponds sur le fond: l'humain dit: "${text.slice(0, 160)}".`,
+            semanticEpisodes,
+            ...(matter ? { matter } : {}),
+          });
+          reply =
+            will.reply?.trim() ||
+            will.inner?.trim() ||
+            reply;
+        }
 
         cognitive.pushInnerMonologue(will.inner ?? reply);
         // Index the exchange into the vector store for semantic recall.
