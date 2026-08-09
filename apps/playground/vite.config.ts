@@ -17,4 +17,7 @@ export default defineConfig({
     port: 5173,
     open: false,
   },
+  preview: {
+    allowedHosts: ["fluxa.memolabs.dev", ".memolabs.dev"],
+  },
 });
